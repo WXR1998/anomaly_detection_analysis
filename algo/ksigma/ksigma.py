@@ -22,4 +22,9 @@ class KSigma(AnomalyDetection):
         anomaly_idxs = (values < down_thres) | (values > up_thres)
         result[anomaly_idxs] = 1
 
-        return TimeSeries(result, ts.time())
+        return TimeSeries(result)
+
+    def tail_is_anomaly(self, ts: TimeSeries) -> bool:
+        # result = self.detect(ts)
+        # return result.value()[-1] == 1
+        return True

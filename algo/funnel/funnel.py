@@ -166,7 +166,7 @@ class Funnel(AnomalyDetection):
         if len(ts.value()) <= length_limit:
             raise Exception(f'Funnel requires the length of data be longer than {length_limit}.')
         score = np.concatenate([np.zeros(self._omega + self._delta), self._funnel(np.array(ts.value())), np.zeros(self._omega + self._gamma)])
-        return TimeSeries(score, ts.time())
+        return TimeSeries(score)
 
     def train(self, **kwargs):
         pass

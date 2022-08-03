@@ -15,3 +15,7 @@ class AnomalyDetection(ABC):
     @abstractmethod
     def detect(self, ts: TimeSeries) -> TimeSeries:
         pass
+
+    @abstractmethod
+    def tail_is_anomaly(self, ts: TimeSeries) -> bool:
+        pass

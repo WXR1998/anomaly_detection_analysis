@@ -3,21 +3,20 @@ import numpy as np
 
 class TimeSeries:
     def __init__(self,
-                 value: Union[list, tuple, np.ndarray],
-                 time: Optional[Union[list, tuple, np.ndarray]]=None):
+                 value: Union[list, tuple, np.ndarray]=tuple(),
+                 maximum_length: int=None):
         value = np.array(value, dtype=float)
-        if time is not None:
-            time = np.array(time, dtype=float)
-            assert time.shape == value.shape
 
-        self._time = time
         self._value = value
+        self._maximum_length = maximum_length
 
-    def value(self):
-        return self._value
+    def add(self, value: float):
+        self._value = np.append(self._value, value)
 
-    def time(self):
-        return self._time
+    def value(self, all: bool=False):
+        if all or self._maximum_length is None or self._maximum_length < len(self._value):
+            return self._value
+        return self._value[:-self._maximum_length]
 
     def standardize(self):
         mu = np.nanmean(self.value())
@@ -27,4 +26,4 @@ class TimeSeries:
             self._value /= std
 
     def __str__(self):
-        return f'Time:\t{self.time()}\nValue:\t{self.value()}\n'
+        return f'Value:\t{self.value()}\n'

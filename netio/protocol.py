@@ -1,0 +1,11 @@
+METRIC = 'metric'
+VALUE = 'value'
+LAST = 'last_timestamp'
+CURRENT = 'current_timestamp'
+
+ALL_ZONE_DETECTION_DICT = 'allZoneDetectionDict'
+FAILURE = 'failure'
+ABNORMAL = 'abnormal'
+SWITCH_ID_LIST = 'switchIDList'
+SERVER_ID_LIST = 'serverIDList'
+LINK_ID_LIST = 'linkIDList'
