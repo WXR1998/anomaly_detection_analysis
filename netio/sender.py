@@ -7,11 +7,12 @@ from sam.base import messageAgent as ma
 from . import protocol
 
 class Sender(ABC):
-    def __init__(self, dst_queue_name: str):
+    def __init__(self, dst_queue_name: str, interval: float=1):
         self._agent = ma.MessageAgent()
         self._dst_queue_name = dst_queue_name
 
         self._results = []
+        self._interval = interval
 
     @abstractmethod
     def _send(self):
@@ -25,10 +26,15 @@ class Sender(ABC):
         def data_send_worker():
             while True:
                 self._send()
-                time.sleep(1)
+                time.sleep(self._interval)
+
+        def done_callback(worker):
+            worker_exception = worker.exception()
+            if worker_exception:
+                print(worker_exception)
 
         ex = ThreadPoolExecutor(max_workers=1)
-        ex.submit(data_send_worker)
+        ex.submit(data_send_worker).add_done_callback(done_callback)
 
 class ResultSender(Sender):
     def __init__(self, dst_queue_name: str='result'):

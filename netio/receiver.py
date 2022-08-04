@@ -25,8 +25,13 @@ class Receiver(ABC):
                     if self._process_func is not None:
                         self._process_func(self.parse_data(msg.getbody()))
 
+        def done_callback(worker):
+            worker_exception = worker.exception()
+            if worker_exception:
+                print(worker_exception)
+
         ex = ThreadPoolExecutor(max_workers=1)
-        ex.submit(data_receive_worker)
+        ex.submit(data_receive_worker).add_done_callback(done_callback)
 
     @staticmethod
     @abstractmethod

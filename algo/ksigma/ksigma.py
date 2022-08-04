@@ -5,6 +5,9 @@ from model import TimeSeries
 
 class KSigma(AnomalyDetection):
     def __init__(self, k: float = 3, **kwargs):
+        """
+        使用一开始的一段作为正常数据，以此计算mu和sigma。后面的异常判断都以该值计算。
+        """
         super().__init__(**kwargs)
         self._k = k
 
@@ -12,12 +15,13 @@ class KSigma(AnomalyDetection):
         pass
 
     def detect(self, ts: TimeSeries, **kwargs) -> TimeSeries:
-        values = ts.value()
+        values = ts.value(normal_part=True)
         mu = np.nanmean(values)
         sigma = np.nanstd(values)
         up_thres = mu + sigma * self._k
         down_thres = mu - sigma * self._k
 
+        values = ts.value()
         result = np.zeros(values.shape)
         anomaly_idxs = (values < down_thres) | (values > up_thres)
         result[anomaly_idxs] = 1
@@ -25,6 +29,5 @@ class KSigma(AnomalyDetection):
         return TimeSeries(result)
 
     def tail_is_anomaly(self, ts: TimeSeries) -> bool:
-        # result = self.detect(ts)
-        # return result.value()[-1] == 1
-        return True
+        result = self.detect(ts)
+        return result.value()[-1] == 1
