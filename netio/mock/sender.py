@@ -4,8 +4,8 @@ from typing import Union
 
 import numpy as np
 from sam.base import messageAgent as ma
+from sam.base import switch, server, sfc, vnf, link
 from netio import Sender
-from .. import protocol
 
 class MockDataSender(Sender):
     def __init__(self,
@@ -34,12 +34,36 @@ class MockDataSender(Sender):
         for idx, _ in enumerate(zip(self._metrics, self._data)):
             metric, data = _
 
-            msg_body = {
-                protocol.METRIC: metric,
-                protocol.VALUE: data[self._cursor[idx]],
-                protocol.LAST: int(datetime.datetime.now().timestamp()) - 60,
-                protocol.CURRENT: int(datetime.datetime.now().timestamp())
-            }
-            self._agent.sendMsg(self._dst_queue_name, ma.SAMMessage(ma.MSG_TYPE_STRING, json.dumps(msg_body)))
+            msg_body = None
+            type_idx = np.random.randint(0, 5)
+
+            if type_idx == 0:
+                msg_body = switch.Switch(
+                    switchID=0,
+                    switchType=switch.SWITCH_TYPE_FORWARD,
+                )
+            elif type_idx == 1:
+                msg_body = server.Server(
+                    controlIfName='ens0',
+                    datapathIfIP='192.168.44.123',
+                    serverType=server.SERVER_TYPE_NORMAL
+                )
+            elif type_idx == 2:
+                msg_body = sfc.SFCI(
+                    sfciID=0,
+                )
+            elif type_idx == 3:
+                msg_body = vnf.VNFI(
+                    vnfID=123,
+                    vnfiID=1,
+                )
+            elif type_idx == 4:
+                msg_body = link.Link(
+                    srcID=0,
+                    dstID=1,
+                    utilization=0.23,
+                )
+
+            self._agent.sendMsg(self._dst_queue_name, ma.SAMMessage(ma.MSG_TYPE_STRING, msg_body))
 
             self._cursor[idx] = (self._cursor[idx] + 1) % len(data)
