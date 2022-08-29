@@ -19,12 +19,15 @@ class TimeSeries:
 
         assert len(value) == len(timestamp)
         self._value = list(value)
+        self._raw_value = list(value)
         self._timestamp = list(timestamp)
         self._normal_window_length = normal_window_length
         self._mu = 0
         self._sigma = 1
 
     def add(self, value: Any, timestamp: int=0):
+        self._raw_value.append(value)
+
         if value is None:
             value = 0
         if isinstance(value, Iterable):
@@ -47,22 +50,20 @@ class TimeSeries:
             return None
         return self._value[-1]
 
-    def value(self, normal_part: bool=False) -> list:
-        if normal_part and len(self._value) > self._normal_window_length:
-            return self._value[:self._normal_window_length]
+    def value(self, limit: Optional[int]=None) -> list:
+        if limit and len(self._value) > limit:
+            return self._value[len(self._value) - limit:]
         return self._value
+
+    def raw_value(self, limit: Optional[int] = None) -> list:
+        if limit and len(self._raw_value) > limit:
+            return self._raw_value[len(self._raw_value) - limit:]
+        return self._raw_value
 
     def timestamp(self, normal_part: bool=False) -> list:
         if normal_part and len(self._timestamp) > self._normal_window_length:
             return self._timestamp[:self._normal_window_length]
         return self._timestamp
-
-    def standardize(self):
-        mu = np.nanmean(self.value(normal_part=True))
-        sigma = np.nanstd(self.value(normal_part=True))
-        self._value -= mu
-        if sigma > 0:
-            self._value /= sigma
 
     def __str__(self):
         return f'Value:\t{self.value()}\n'

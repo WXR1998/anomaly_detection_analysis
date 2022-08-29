@@ -10,11 +10,11 @@ from model import TimeSeries
 from netio import protocol
 
 METRICS_LIST = {
-    protocol.REPLY_INSTANCE_TYPE_SWITCH: [
+    protocol.INSTANCE_TYPE_SWITCH: [
         'p4NFUsage',
         'tcamUsage'
     ],
-    protocol.REPLY_INSTANCE_TYPE_SERVER: [
+    protocol.INSTANCE_TYPE_SERVER: [
         '_socketNum',
         '_coreUtilization',
         '_coreNUMADistribution',
@@ -23,7 +23,7 @@ METRICS_LIST = {
         '_dramUsagePercentage',
         '_dramUsageAmount'
     ],
-    protocol.REPLY_INSTANCE_TYPE_VNFI: [
+    protocol.INSTANCE_TYPE_VNFI: [
         'cpuCoreDistribution',
         'memNUMADistribution',
         'inputTrafficAmount',
@@ -31,7 +31,7 @@ METRICS_LIST = {
         'outputTrafficAmount',
         'outputPacketAmount'
     ],
-    protocol.REPLY_INSTANCE_TYPE_LINK: [
+    protocol.INSTANCE_TYPE_LINK: [
         'utilization',
         'queueLatency'
     ]
@@ -101,22 +101,22 @@ class Core:
                     obj = None
                     timestamp = 0
                     active = False
-                    if instance_type == protocol.REPLY_INSTANCE_TYPE_SWITCH:
-                        obj: switch.Switch = d[protocol.REPLY_LABEL_SWITCH]
-                        active = d[protocol.REPLY_LABEL_ACTIVE]
-                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_SERVER:
-                        obj: server.Server = d[protocol.REPLY_LABEL_SERVER]
-                        active = d[protocol.REPLY_LABEL_ACTIVE]
-                        timestamp = d[protocol.REPLY_LABEL_TIMESTAMP]
-                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_LINK:
-                        obj: link.Link = d[protocol.REPLY_LABEL_LINK]
-                        active = d[protocol.REPLY_LABEL_ACTIVE]
-                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_SFCI:
-                        obj: sfc.SFCI = d[protocol.REPLY_LABEL_SFCI]
-                        active = d[protocol.REPLY_LABEL_ACTIVE]
-                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_VNFI:
-                        obj: vnf.VNFI = d[protocol.REPLY_LABEL_VNFI]
-                        active = d[protocol.REPLY_LABEL_ACTIVE]
+                    if instance_type == protocol.INSTANCE_TYPE_SWITCH:
+                        obj: switch.Switch = d[protocol.ATTR_SWITCH]
+                        active = d[protocol.ATTR_ACTIVE]
+                    elif instance_type == protocol.INSTANCE_TYPE_SERVER:
+                        obj: server.Server = d[protocol.ATTR_SERVER]
+                        active = d[protocol.ATTR_ACTIVE]
+                        timestamp = d[protocol.ATTR_TIMESTAMP]
+                    elif instance_type == protocol.INSTANCE_TYPE_LINK:
+                        obj: link.Link = d[protocol.ATTR_LINK]
+                        active = d[protocol.ATTR_ACTIVE]
+                    elif instance_type == protocol.INSTANCE_TYPE_SFCI:
+                        obj: sfc.SFCI = d[protocol.ATTR_SFCI]
+                        active = d[protocol.ATTR_ACTIVE]
+                    elif instance_type == protocol.INSTANCE_TYPE_VNFI:
+                        obj: vnf.VNFI = d[protocol.ATTR_VNFI]
+                        active = d[protocol.ATTR_ACTIVE]
                     if not active:
                         continue
 
@@ -131,12 +131,12 @@ class Core:
                         self._instances[zone][instance_type][id][metric].add(value, timestamp)
 
                         if self._detector.tail_is_anomaly(self._instances[zone][instance_type][id][metric]):
-                            if instance_type == protocol.REPLY_INSTANCE_TYPE_SERVER:
-                                self._abnormal_result_handler(zone, protocol.ABNORMAL, server_id=id)
-                            elif instance_type == protocol.REPLY_INSTANCE_TYPE_LINK:
-                                self._abnormal_result_handler(zone, protocol.ABNORMAL, link_id=id)
-                            elif instance_type == protocol.REPLY_INSTANCE_TYPE_SWITCH:
-                                self._abnormal_result_handler(zone, protocol.ABNORMAL, switch_id=id)
+                            if instance_type == protocol.INSTANCE_TYPE_SERVER:
+                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=id)
+                            elif instance_type == protocol.INSTANCE_TYPE_LINK:
+                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=id)
+                            elif instance_type == protocol.INSTANCE_TYPE_SWITCH:
+                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, switch_id=id)
 
     def process_dashboard_request(self, cmd: command.Command):
         logging.debug(f'Received dashboard request command, command_id: {cmd.cmdID}')
@@ -144,10 +144,43 @@ class Core:
         if not self._dashboard_reply_handler:
             logging.error('Dashboard reply handler not registered. Results will not be sent.')
 
-        reply_data = {}
+        attr: dict = cmd.attributes
+        query_type = attr.get(protocol.ATTR_QUERY_TYPE)
+        metric_name = attr.get(protocol.ATTR_METRIC_NAME, default=None)
+        zone = attr.get(protocol.ATTR_ZONE)
+        time_window = attr.get(protocol.ATTR_TIME_WINDOW, default=None)
+        instance_type = attr.get(protocol.ATTR_INSTANCE_TYPE)
+        instance_id_list = attr.get(protocol.ATTR_INSTANCE_ID_LIST, default=None)
 
-        # TODO
+        result = {}
 
+        if query_type == protocol.QUERY_TYPE_HISTORY:
+            data: dict = self._instances[zone][instance_type]
+            for id in instance_id_list:
+                result[id] = data[id][metric_name].raw_value(limit=time_window)
+
+        elif query_type == protocol.QUERY_TYPE_ANOMALY:
+            data: dict = self._instances[zone][instance_type]
+            for id in instance_id_list:
+                result[id] = self._detector.tail_is_anomaly(data[id][metric_name])
+
+        elif query_type == protocol.QUERY_TYPE_FAILURE:
+            data: dict = self._instances[zone][instance_type]
+            for id in instance_id_list:
+                result[id] = self._detector.tail_is_anomaly(data[id][metric_name])
+
+        elif query_type == protocol.QUERY_TYPE_INSTANCE_ID:
+            result = list(self._instances[zone][instance_type].keys())
+
+        else:
+            logging.error(f'Unknown query type: {query_type}')
+            return
+
+        reply_data = {
+            protocol.ATTR_QUERY_TYPE: query_type,
+            protocol.ATTR_INSTANCE_TYPE: instance_type,
+            protocol.ATTR_VALUE: result
+        }
         self._dashboard_reply_handler(cmd.cmdID, reply_data)
 
     def register_abnormal_result_handler(self, func: Callable):

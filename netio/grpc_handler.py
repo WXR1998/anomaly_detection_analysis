@@ -52,7 +52,11 @@ class GRPCHandler(ABC):
         @return:
         """
 
+        def _process_thread(msg_type: str, msg: ma.SAMMessage):
+            self._recv_handlers[msg_type](msg)
+
         def _listen():
+            ex = ThreadPoolExecutor(max_workers=8)
             while True:
                 msg = self._agent.getMsgByRPC(self._ip, self._port)
                 msg_type = msg.getMessageType()
@@ -60,7 +64,7 @@ class GRPCHandler(ABC):
                     continue
 
                 if msg_type in self._recv_handlers:
-                    self._recv_handlers[msg_type](msg)
+                    ex.submit(_process_thread, msg_type, msg).add_done_callback(thread_done_callback)
                 else:
                     logging.warning(f'Unregistered message type: {msg_type}')
 
@@ -74,8 +78,9 @@ class GRPCHandler(ABC):
         """
 
         def _wrapped_func(interval: Union[int, float], func: Callable):
+            ex = ThreadPoolExecutor(max_workers=8)
             while True:
-                func()
+                ex.submit(func).add_done_callback(thread_done_callback)
                 if interval > 0:
                     time.sleep(interval)
 
@@ -100,7 +105,7 @@ class GRPCHandler(ABC):
         """
 
         assert zone in [ma.TURBONET_ZONE, ma.SIMULATOR_ZONE]
-        assert type in [protocol.ABNORMAL, protocol.FAILURE]
+        assert type in [protocol.ATTR_ABNORMAL, protocol.ATTR_FAILURE]
         self._abnormal_results.append((zone, type, switch_id, server_id, link_id))
 
     def _send_get_dcn_info(self):
@@ -110,29 +115,29 @@ class GRPCHandler(ABC):
 
     def _send_abnormal_results(self):
         data = {
-            protocol.ALL_ZONE_DETECTION_DICT: {
+            protocol.ATTR_ALL_ZONE_DETECTION_DICT: {
                 ma.TURBONET_ZONE: {
-                    protocol.FAILURE: {
-                        protocol.SWITCH_ID_LIST: [],
-                        protocol.SERVER_ID_LIST: [],
-                        protocol.LINK_ID_LIST: []
+                    protocol.ATTR_FAILURE: {
+                        protocol.ATTR_SWITCH_ID_LIST: [],
+                        protocol.ATTR_SERVER_ID_LIST: [],
+                        protocol.ATTR_LINK_ID_LIST: []
                     },
-                    protocol.ABNORMAL: {
-                        protocol.SWITCH_ID_LIST: [],
-                        protocol.SERVER_ID_LIST: [],
-                        protocol.LINK_ID_LIST: []
+                    protocol.ATTR_ABNORMAL: {
+                        protocol.ATTR_SWITCH_ID_LIST: [],
+                        protocol.ATTR_SERVER_ID_LIST: [],
+                        protocol.ATTR_LINK_ID_LIST: []
                     },
                 },
                 ma.SIMULATOR_ZONE: {
-                    protocol.FAILURE: {
-                        protocol.SWITCH_ID_LIST: [],
-                        protocol.SERVER_ID_LIST: [],
-                        protocol.LINK_ID_LIST: []
+                    protocol.ATTR_FAILURE: {
+                        protocol.ATTR_SWITCH_ID_LIST: [],
+                        protocol.ATTR_SERVER_ID_LIST: [],
+                        protocol.ATTR_LINK_ID_LIST: []
                     },
-                    protocol.ABNORMAL: {
-                        protocol.SWITCH_ID_LIST: [],
-                        protocol.SERVER_ID_LIST: [],
-                        protocol.LINK_ID_LIST: []
+                    protocol.ATTR_ABNORMAL: {
+                        protocol.ATTR_SWITCH_ID_LIST: [],
+                        protocol.ATTR_SERVER_ID_LIST: [],
+                        protocol.ATTR_LINK_ID_LIST: []
                     },
                 }
             }
@@ -144,11 +149,11 @@ class GRPCHandler(ABC):
                 self._abnormal_results.pop(0)
 
                 if switchID is not None:
-                    data[protocol.ALL_ZONE_DETECTION_DICT][zone][type][protocol.SWITCH_ID_LIST].append(switchID)
+                    data[protocol.ATTR_ALL_ZONE_DETECTION_DICT][zone][type][protocol.ATTR_SWITCH_ID_LIST].append(switchID)
                 if serverID is not None:
-                    data[protocol.ALL_ZONE_DETECTION_DICT][zone][type][protocol.SERVER_ID_LIST].append(serverID)
+                    data[protocol.ATTR_ALL_ZONE_DETECTION_DICT][zone][type][protocol.ATTR_SERVER_ID_LIST].append(serverID)
                 if linkID is not None:
-                    data[protocol.ALL_ZONE_DETECTION_DICT][zone][type][protocol.LINK_ID_LIST].append(linkID)
+                    data[protocol.ATTR_ALL_ZONE_DETECTION_DICT][zone][type][protocol.ATTR_LINK_ID_LIST].append(linkID)
 
             cmd = command.Command(command.CMD_TYPE_HANDLE_FAILURE_ABNORMAL, uuid.uuid1(), attributes=data)
             msg = ma.SAMMessage(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD, cmd)

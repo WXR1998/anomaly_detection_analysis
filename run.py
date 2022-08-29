@@ -5,7 +5,7 @@ from algo import KSigma
 from netio.grpc_handler import GRPCHandler
 
 if __name__ == '__main__':
-    core = Core(detector=KSigma(k=3), debug=False)
+    core = Core(detector=KSigma(k=3), debug=True)
 
     handler = GRPCHandler()
     handler.regular_registration()
