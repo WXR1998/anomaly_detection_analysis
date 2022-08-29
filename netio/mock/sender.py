@@ -5,7 +5,6 @@ from typing import Union
 import numpy as np
 from sam.base import messageAgent as ma
 from sam.base import switch, server, sfc, vnf, link
-from netio import Sender
 
 class MockDataSender(Sender):
     def __init__(self,

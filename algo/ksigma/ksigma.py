@@ -1,9 +1,7 @@
-import numpy as np
-
-from algo import AnomalyDetection
+from algo import AnomalyDetector
 from model import TimeSeries
 
-class KSigma(AnomalyDetection):
+class KSigma(AnomalyDetector):
     def __init__(self, k: float = 3, **kwargs):
         """
         使用一开始的一段作为正常数据，以此计算mu和sigma。后面的异常判断都以该值计算。
@@ -15,19 +13,15 @@ class KSigma(AnomalyDetection):
         pass
 
     def detect(self, ts: TimeSeries, **kwargs) -> TimeSeries:
-        values = ts.value(normal_part=True)
-        mu = np.nanmean(values)
-        sigma = np.nanstd(values)
+        # deprecated
+        return ts
+
+    def tail_is_anomaly(self, ts: TimeSeries) -> bool:
+        mu = ts._mu
+        sigma = ts._sigma
+
         up_thres = mu + sigma * self._k
         down_thres = mu - sigma * self._k
 
-        values = ts.value()
-        result = np.zeros(values.shape)
-        anomaly_idxs = (values < down_thres) | (values > up_thres)
-        result[anomaly_idxs] = 1
-
-        return TimeSeries(result)
-
-    def tail_is_anomaly(self, ts: TimeSeries) -> bool:
-        result = self.detect(ts)
-        return result.value()[-1] == 1
+        v = ts.tail_value()
+        return not (down_thres < v < up_thres)

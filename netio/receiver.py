@@ -4,8 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from sam.base import messageAgent as ma
 
-from util import AnomalyDetector
-from . import protocol, FrontendReplySender
+from . import protocol
 
 
 class Receiver(ABC):
@@ -19,7 +18,8 @@ class Receiver(ABC):
         self._process_func = process_func
 
     def receive(self):
-        self._agent.startRecvMsg(self._src_queue_name)
+        # self._agent.startRecvMsg(self._src_queue_name)
+        self._agent.startMsgReceiverRPCServer()
 
         def data_receive_worker():
             while True:
@@ -42,8 +42,8 @@ class DataReceiver(Receiver):
 
 class FrontendRequestReceiver(Receiver):
     def __init__(self, src_queue_name: str='frontend_request',
-                 anomaly_detector: AnomalyDetector=None,
-                 sender: FrontendReplySender=None):
+                 anomaly_detector=None,
+                 sender=None):
         """
         接收前端发来的查询请求，返回对应的结果
         """

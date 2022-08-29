@@ -2,11 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from numpy.linalg import svd
 
-from algo import AnomalyDetection
+from algo import AnomalyDetector
 from model import TimeSeries
 
 
-class Funnel(AnomalyDetection):
+class Funnel(AnomalyDetector):
     def __init__(self, window_size: int = 5):
         self._delta = window_size
         self._omega = window_size

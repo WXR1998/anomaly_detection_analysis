@@ -1,7 +1,4 @@
-METRIC = 'metric'
 VALUE = 'value'
-LAST = 'last_timestamp'
-CURRENT = 'current_timestamp'
 
 ALL_ZONE_DETECTION_DICT = 'allZoneDetectionDict'
 FAILURE = 'failure'
@@ -18,6 +15,17 @@ REPLY_INSTANCE_ID = 'instance_id'
 
 REQUEST_QUERY_TYPE_HISTORY_VALUE = 'history_value'
 REQUEST_QUERY_TYPE_ANOMALY_RECORD = 'anomaly_record'
-REQUEST_INSTANCE_TYPE_SWITCH = 'switch'
-REQUEST_INSTANCE_TYPE_LINK = 'link'
-REQUEST_INSTANCE_TYPE_SERVER = 'server'
+
+REPLY_INSTANCE_TYPE_SWITCH = 'switches'
+REPLY_INSTANCE_TYPE_LINK = 'links'
+REPLY_INSTANCE_TYPE_SERVER = 'servers'
+REPLY_INSTANCE_TYPE_SFCI = 'sfcis'
+REPLY_INSTANCE_TYPE_VNFI = 'vnfis'
+
+REPLY_LABEL_ACTIVE = 'Active'
+REPLY_LABEL_TIMESTAMP = 'timestamp'
+REPLY_LABEL_SERVER = 'server'
+REPLY_LABEL_SWITCH = 'switch'
+REPLY_LABEL_LINK = 'link'
+REPLY_LABEL_VNFI = 'vnfi'
+REPLY_LABEL_SFCI = 'sfci'

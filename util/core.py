@@ -1,0 +1,157 @@
+import datetime
+import logging
+import tqdm
+
+from sam.base import messageAgent as ma, request, command, server, switch, vnf, sfc, link
+from typing import Callable
+
+from algo import AnomalyDetector
+from model import TimeSeries
+from netio import protocol
+
+METRICS_LIST = {
+    protocol.REPLY_INSTANCE_TYPE_SWITCH: [
+        'p4NFUsage',
+        'tcamUsage'
+    ],
+    protocol.REPLY_INSTANCE_TYPE_SERVER: [
+        '_socketNum',
+        '_coreUtilization',
+        '_coreNUMADistribution',
+        '_sizeOfTotalHugepages',
+        '_dramCapacity',
+        '_dramUsagePercentage',
+        '_dramUsageAmount'
+    ],
+    protocol.REPLY_INSTANCE_TYPE_VNFI: [
+        'cpuCoreDistribution',
+        'memNUMADistribution',
+        'inputTrafficAmount',
+        'inputPacketAmount',
+        'outputTrafficAmount',
+        'outputPacketAmount'
+    ],
+    protocol.REPLY_INSTANCE_TYPE_LINK: [
+        'utilization',
+        'queueLatency'
+    ]
+}
+
+class Core:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self,
+                 detector: AnomalyDetector,
+                 normal_window_length: int=60,
+                 debug: bool=True):
+        self._detector = detector
+        self._values = {}
+        self._normal_window_length = normal_window_length
+        self._debug = debug
+
+        # zone, type, switch_id, server_id, link_id
+        self._abnormal_result_handler = None
+        # cmd_id, data
+        self._dashboard_reply_handler = None
+
+        # {zone: {instance_type: {id: {metric: TimeSeries() }}}}
+        self._instances = {
+            ma.SIMULATOR_ZONE: { k: {} for k in METRICS_LIST.keys() },
+            ma.TURBONET_ZONE: { k: {} for k in METRICS_LIST.keys() }
+        }
+
+    @classmethod
+    def singleton(cls):
+        """
+        除了第一次使用之外，都需调用此方法以获取单例
+        @return:
+        """
+        if cls._instance is None:
+            raise NameError('Core class not initialized.')
+        return cls._instance
+
+    def process_input_data(self, reply: request.Reply):
+        logging.debug(f'Received input data, request_id: {reply.requestID}')
+
+        if not self._abnormal_result_handler:
+            logging.error('Abnormal handler not registered. Results will not be sent.')
+
+        data: dict = reply.attributes
+
+        for instance_type in METRICS_LIST.keys():
+            if instance_type not in data:
+                continue
+            instance_dict = data[instance_type]
+            for zone in instance_dict.keys():
+                zone_dict = instance_dict[zone]
+
+                if self._debug:
+                    progress = tqdm.tqdm(zone_dict.items())
+                    progress.set_description(f'{instance_type}_{zone}')
+                else:
+                    progress = zone_dict.items()
+
+                for id, d in progress:
+
+                    obj = None
+                    timestamp = 0
+                    active = False
+                    if instance_type == protocol.REPLY_INSTANCE_TYPE_SWITCH:
+                        obj: switch.Switch = d[protocol.REPLY_LABEL_SWITCH]
+                        active = d[protocol.REPLY_LABEL_ACTIVE]
+                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_SERVER:
+                        obj: server.Server = d[protocol.REPLY_LABEL_SERVER]
+                        active = d[protocol.REPLY_LABEL_ACTIVE]
+                        timestamp = d[protocol.REPLY_LABEL_TIMESTAMP]
+                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_LINK:
+                        obj: link.Link = d[protocol.REPLY_LABEL_LINK]
+                        active = d[protocol.REPLY_LABEL_ACTIVE]
+                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_SFCI:
+                        obj: sfc.SFCI = d[protocol.REPLY_LABEL_SFCI]
+                        active = d[protocol.REPLY_LABEL_ACTIVE]
+                    elif instance_type == protocol.REPLY_INSTANCE_TYPE_VNFI:
+                        obj: vnf.VNFI = d[protocol.REPLY_LABEL_VNFI]
+                        active = d[protocol.REPLY_LABEL_ACTIVE]
+                    if not active:
+                        continue
+
+                    if id not in self._instances[zone][instance_type]:
+                        self._instances[zone][instance_type][id] = {
+                            metric: TimeSeries()
+                            for metric in METRICS_LIST[instance_type]
+                        }
+
+                    for metric in METRICS_LIST[instance_type]:
+                        value = obj.__getattribute__(metric)
+                        self._instances[zone][instance_type][id][metric].add(value, timestamp)
+
+                        if self._detector.tail_is_anomaly(self._instances[zone][instance_type][id][metric]):
+                            if instance_type == protocol.REPLY_INSTANCE_TYPE_SERVER:
+                                self._abnormal_result_handler(zone, protocol.ABNORMAL, server_id=id)
+                            elif instance_type == protocol.REPLY_INSTANCE_TYPE_LINK:
+                                self._abnormal_result_handler(zone, protocol.ABNORMAL, link_id=id)
+                            elif instance_type == protocol.REPLY_INSTANCE_TYPE_SWITCH:
+                                self._abnormal_result_handler(zone, protocol.ABNORMAL, switch_id=id)
+
+    def process_dashboard_request(self, cmd: command.Command):
+        logging.debug(f'Received dashboard request command, command_id: {cmd.cmdID}')
+
+        if not self._dashboard_reply_handler:
+            logging.error('Dashboard reply handler not registered. Results will not be sent.')
+
+        reply_data = {}
+
+        # TODO
+
+        self._dashboard_reply_handler(cmd.cmdID, reply_data)
+
+    def register_abnormal_result_handler(self, func: Callable):
+        self._abnormal_result_handler = func
+
+    def register_dashboard_reply_handler(self, func: Callable):
+        self._dashboard_reply_handler = func

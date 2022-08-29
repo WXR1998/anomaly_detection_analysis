@@ -1,3 +1,3 @@
-from .anomaly_detection import AnomalyDetection
+from .anomaly_detector import AnomalyDetector
 from .ksigma import KSigma
 from .funnel import Funnel

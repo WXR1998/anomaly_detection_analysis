@@ -1,1 +1,1 @@
-from .detector import AnomalyDetector
+from .core import Core

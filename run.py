@@ -1,55 +1,19 @@
-import numpy as np
-import logging
+from typing import Iterable
 
-from util.dataset import Dataset
-
-logging.basicConfig(level=logging.WARNING)
-
-from netio.mock import MockDataSender, MockResultReceiver
-from util import AnomalyDetector
+from util import Core
 from algo import KSigma
-
-def mock_test():
-    data = np.concatenate([np.random.normal(0, 1, 60), np.random.normal(10, 1, 60)])
-
-    data_send = MockDataSender(dst_queue_name='data',
-                               data=[data],
-                               metrics=['test metric 1'],
-                               interval=0.01
-                               )
-    data_send.send()
-
-    res_recv = MockResultReceiver(src_queue_name='result',
-                                  process_func=print)
-    res_recv.receive()
-
-    ad = AnomalyDetector(src_queue_name='data',
-                         dst_queue_name='result',
-                         detector=KSigma())
-    ad.main()
+from netio.grpc_handler import GRPCHandler
 
 if __name__ == '__main__':
-    dataset = Dataset()
-    dataset.add_csv('./data/cpu_data.csv')
-    dataset.add_csv('./data/mem_data.csv')
+    core = Core(detector=KSigma(k=3), debug=False)
 
-    names, values = [], []
-    for data_name, _ in dataset.data().items():
-        timestamp, value = _
-        names.append(data_name)
-        values.append(value)
+    handler = GRPCHandler()
+    handler.regular_registration()
+    handler.start_listening()
+    handler.start_deadloop_sending()
 
-    sender = MockDataSender(dst_queue_name='data',
-                            data=values,
-                            metrics=names,
-                            interval=0.01)
-    sender.send()
+    core.register_dashboard_reply_handler(handler.send_dashboard_reply)
+    core.register_abnormal_result_handler(handler.add_anomaly_result)
 
-    recv = MockResultReceiver(src_queue_name='result',
-                                  process_func=print)
-    recv.receive()
-
-    ad = AnomalyDetector(src_queue_name='data',
-                         dst_queue_name='result',
-                         detector=KSigma(k=3))
-    ad.main()
+    while True:
+        pass

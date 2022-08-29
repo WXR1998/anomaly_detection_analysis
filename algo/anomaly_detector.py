@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from model import TimeSeries
 
 
-class AnomalyDetection(ABC):
+class AnomalyDetector(ABC):
     @abstractmethod
     def __init__(self, **kwargs):
         pass
