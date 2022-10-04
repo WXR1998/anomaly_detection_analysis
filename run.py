@@ -1,5 +1,3 @@
-from typing import Iterable
-
 from util import Core
 from algo import KSigma
 from netio.grpc_handler import GRPCHandler

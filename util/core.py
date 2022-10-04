@@ -37,6 +37,7 @@ METRICS_LIST = {
     ]
 }
 
+
 class Core:
     _instance = None
 
@@ -47,8 +48,8 @@ class Core:
 
     def __init__(self,
                  detector: AnomalyDetector,
-                 normal_window_length: int=60,
-                 debug: bool=True):
+                 normal_window_length: int = 60,
+                 debug: bool = True):
         self._detector = detector
         self._values = {}
         self._normal_window_length = normal_window_length
@@ -61,8 +62,8 @@ class Core:
 
         # {zone: {instance_type: {id: {metric: TimeSeries() }}}}
         self._instances = {
-            ma.SIMULATOR_ZONE: { k: {} for k in METRICS_LIST.keys() },
-            ma.TURBONET_ZONE: { k: {} for k in METRICS_LIST.keys() }
+            ma.SIMULATOR_ZONE: {k: {} for k in METRICS_LIST.keys()},
+            ma.TURBONET_ZONE: {k: {} for k in METRICS_LIST.keys()}
         }
 
     @classmethod
@@ -76,12 +77,13 @@ class Core:
         return cls._instance
 
     def process_input_data(self, reply: request.Reply):
-        logging.debug(f'Received input data, request_id: {reply.requestID}')
+        logging.info(f'Received input data, request_id: {reply.requestID}')
 
         if not self._abnormal_result_handler:
             logging.error('Abnormal handler not registered. Results will not be sent.')
 
         data: dict = reply.attributes
+        print(data)
 
         for instance_type in METRICS_LIST.keys():
             if instance_type not in data:
@@ -97,7 +99,6 @@ class Core:
                     progress = zone_dict.items()
 
                 for id, d in progress:
-
                     obj = None
                     timestamp = 0
                     active = False

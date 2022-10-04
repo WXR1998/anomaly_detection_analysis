@@ -111,7 +111,8 @@ class GRPCHandler(ABC):
     def _send_get_dcn_info(self):
         req = ma.Request(0, uuid.uuid1(), request.REQUEST_TYPE_GET_DCN_INFO)
         msg = ma.SAMMessage(ma.MSG_TYPE_REQUEST, req)
-        self._agent.sendMsgByRPC(measurer.MEASURER_IP, measurer.MEASURER_PORT, msg)
+        logging.warning('Sending DCN request.')
+        self._agent.sendMsgByRPC(DEFINABLE_MEASURER_IP, DEFINABLE_MEASURER_PORT, msg)
 
     def _send_abnormal_results(self):
         data = {
