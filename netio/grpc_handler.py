@@ -4,6 +4,7 @@ from abc import ABC
 from typing import Union, Callable
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import json
 
 from sam.base import messageAgent as ma, request, command, exceptionProcessor
 from sam.base.messageAgentAuxillary.msgAgentRPCConf import *
@@ -21,11 +22,13 @@ class GRPCHandler(ABC):
     def __init__(self,
                  ip: str=ABNORMAL_DETECTOR_IP,
                  port: Union[str, int]=ABNORMAL_DETECTOR_PORT,
+                 send_results: bool=False
                  ):
         self._agent = ma.MessageAgent()
         self._ip = ip
         self._port = str(port)
         self._agent.startMsgReceiverRPCServer(self._ip, self._port)
+        self._send_results = send_results
 
         # 对于每种msg，有对应的处理函数
         self._recv_handlers = {}    # {msg_type: process_function}
@@ -34,6 +37,7 @@ class GRPCHandler(ABC):
         self._send_deadloop_handlers = []    # [(interval, process_function)]
 
         self._abnormal_results = []
+        self._topo = None
 
     def regular_registration(self):
         """
@@ -112,53 +116,121 @@ class GRPCHandler(ABC):
         req = ma.Request(0, uuid.uuid1(), request.REQUEST_TYPE_GET_DCN_INFO)
         msg = ma.SAMMessage(ma.MSG_TYPE_REQUEST, req)
         logging.warning('Sending DCN request.')
-        self._agent.sendMsgByRPC(DEFINABLE_MEASURER_IP, DEFINABLE_MEASURER_PORT, msg)
+        self._agent.sendMsgByRPC(MEASURER_IP, MEASURER_PORT, msg)
+
+    def _data_format(self, d: dict, limit: int=10) -> str:
+        """
+        将dict格式化输出，较长的list只显示前n项
+        """
+        result = None
+
+        if type(d) == dict:
+            for k, v in d.items():
+                r = f'{k}: {self._data_format(v)}'
+                if result is None:
+                    result = r
+                else:
+                    result = result + ', ' + r
+            result = '{' + result + '}'
+        elif type(d) == list:
+            l = len(d)
+            if len(d) > limit:
+                d = d[:limit]
+            result = f'{json.dumps(d)}' + ('' if l <= limit else f' (len: {l})')
+        return result
 
     def _send_abnormal_results(self):
         data = {
-            protocol.ATTR_ALL_ZONE_DETECTION_DICT: {
-                ma.TURBONET_ZONE: {
-                    protocol.ATTR_FAILURE: {
-                        protocol.ATTR_SWITCH_ID_LIST: [],
-                        protocol.ATTR_SERVER_ID_LIST: [],
-                        protocol.ATTR_LINK_ID_LIST: []
-                    },
-                    protocol.ATTR_ABNORMAL: {
-                        protocol.ATTR_SWITCH_ID_LIST: [],
-                        protocol.ATTR_SERVER_ID_LIST: [],
-                        protocol.ATTR_LINK_ID_LIST: []
-                    },
+            ma.TURBONET_ZONE: {
+                protocol.ATTR_FAILURE: {
+                    protocol.ATTR_SWITCH_ID_LIST: set(),
+                    protocol.ATTR_SERVER_ID_LIST: set(),
+                    protocol.ATTR_LINK_ID_LIST: set()
                 },
-                ma.SIMULATOR_ZONE: {
-                    protocol.ATTR_FAILURE: {
-                        protocol.ATTR_SWITCH_ID_LIST: [],
-                        protocol.ATTR_SERVER_ID_LIST: [],
-                        protocol.ATTR_LINK_ID_LIST: []
-                    },
-                    protocol.ATTR_ABNORMAL: {
-                        protocol.ATTR_SWITCH_ID_LIST: [],
-                        protocol.ATTR_SERVER_ID_LIST: [],
-                        protocol.ATTR_LINK_ID_LIST: []
-                    },
-                }
+                protocol.ATTR_ABNORMAL: {
+                    protocol.ATTR_SWITCH_ID_LIST: set(),
+                    protocol.ATTR_SERVER_ID_LIST: set(),
+                    protocol.ATTR_LINK_ID_LIST: set()
+                },
+            },
+            ma.SIMULATOR_ZONE: {
+                protocol.ATTR_FAILURE: {
+                    protocol.ATTR_SWITCH_ID_LIST: set(),
+                    protocol.ATTR_SERVER_ID_LIST: set(),
+                    protocol.ATTR_LINK_ID_LIST: set()
+                },
+                protocol.ATTR_ABNORMAL: {
+                    protocol.ATTR_SWITCH_ID_LIST: set(),
+                    protocol.ATTR_SERVER_ID_LIST: set(),
+                    protocol.ATTR_LINK_ID_LIST: set()
+                },
             }
         }
 
+
+
         if len(self._abnormal_results) > 0:
+            logging.warning(f'Sending anomaly report.')
             while len(self._abnormal_results) > 0:
-                zone, type, switchID, serverID, linkID = self._abnormal_results[0]
+                zone, type_, switchID, serverID, linkID = self._abnormal_results[0]
                 self._abnormal_results.pop(0)
 
                 if switchID is not None:
-                    data[protocol.ATTR_ALL_ZONE_DETECTION_DICT][zone][type][protocol.ATTR_SWITCH_ID_LIST].append(switchID)
+                    data[zone][type_][protocol.ATTR_SWITCH_ID_LIST].add(switchID)
                 if serverID is not None:
-                    data[protocol.ATTR_ALL_ZONE_DETECTION_DICT][zone][type][protocol.ATTR_SERVER_ID_LIST].append(serverID)
+                    data[zone][type_][protocol.ATTR_SERVER_ID_LIST].add(serverID)
                 if linkID is not None:
-                    data[protocol.ATTR_ALL_ZONE_DETECTION_DICT][zone][type][protocol.ATTR_LINK_ID_LIST].append(linkID)
+                    data[zone][type_][protocol.ATTR_LINK_ID_LIST].add(linkID)
+
+            # 交换机故障推断
+            for zone in self._topo.keys():
+                for src_id in self._topo[zone]:
+                    count = 0
+                    ano_count = 0
+                    for dst_id in self._topo[zone][src_id]:
+                        if (src_id, dst_id) in data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_LINK_ID_LIST]:
+                            ano_count += 1
+                        count += 1
+
+                    if ano_count >= int(count * 0.8):        # 该交换机发出的超过80%的link有问题，需要将告警合并
+                        # print(ano_count, count)
+                        data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_SWITCH_ID_LIST].add(src_id)
+                        for dst_id in self._topo[zone][src_id]:
+                            obj = (src_id, dst_id)
+                            data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_LINK_ID_LIST].discard(obj)
+
+            data = {
+                protocol.ATTR_ALL_ZONE_DETECTION_DICT: {
+                    ma.TURBONET_ZONE: {
+                        protocol.ATTR_FAILURE: {
+                            k: list(v)
+                            for k, v in data[ma.TURBONET_ZONE][protocol.ATTR_FAILURE].items()
+                        },
+                        protocol.ATTR_ABNORMAL: {
+                            k: list(v)
+                            for k, v in data[ma.TURBONET_ZONE][protocol.ATTR_ABNORMAL].items()
+                        },
+                    },
+                    ma.SIMULATOR_ZONE: {
+                        protocol.ATTR_FAILURE: {
+                            k: list(v)
+                            for k, v in data[ma.SIMULATOR_ZONE][protocol.ATTR_FAILURE].items()
+                        },
+                        protocol.ATTR_ABNORMAL: {
+                            k: list(v)
+                            for k, v in data[ma.SIMULATOR_ZONE][protocol.ATTR_ABNORMAL].items()
+                        },
+                    }
+                }
+            }
+
+            print(self._data_format(data))
 
             cmd = command.Command(command.CMD_TYPE_HANDLE_FAILURE_ABNORMAL, uuid.uuid1(), attributes=data)
             msg = ma.SAMMessage(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD, cmd)
-            self._agent.sendMsgByRPC(REGULATOR_IP, REGULATOR_PORT, msg)
+            if self._send_results:
+                self._agent.sendMsgByRPC(REGULATOR_IP, REGULATOR_PORT, msg)
+
 
     def send_dashboard_reply(self, cmd_id: str, data: dict):
         cmd = command.CommandReply(cmd_id, command.CMD_STATE_SUCCESSFUL, attributes=data)
@@ -188,3 +260,7 @@ class GRPCHandler(ABC):
             return None
 
         Core.singleton().process_input_data(reply)
+
+    def _set_topo(self, topo: dict):
+        self._topo = topo
+        logging.warning('交换机链路拓扑已获取')

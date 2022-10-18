@@ -11,7 +11,7 @@ class TimeSeries:
     def __init__(self,
                  value: Union[list, tuple, np.ndarray]=tuple(),
                  timestamp: Union[list, tuple, np.ndarray]=tuple(),
-                 normal_window_length: int=60):
+                 normal_window_length: int=10):
         """
         对于时间序列的前normal_window_length个元素，认为其是正常的。
         用正常的部分训练模型、获取算法需要的超参数。
@@ -64,6 +64,9 @@ class TimeSeries:
         if normal_part and len(self._timestamp) > self._normal_window_length:
             return self._timestamp[:self._normal_window_length]
         return self._timestamp
+
+    def __len__(self):
+        return len(self._value)
 
     def __str__(self):
         return f'Value:\t{self.value()}\n'

@@ -24,4 +24,4 @@ class KSigma(AnomalyDetector):
         down_thres = mu - sigma * self._k
 
         v = ts.tail_value()
-        return not (down_thres < v < up_thres)
+        return not (down_thres <= v <= up_thres) and len(ts) > ts._normal_window_length

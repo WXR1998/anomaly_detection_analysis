@@ -59,12 +59,20 @@ class Core:
         self._abnormal_result_handler = None
         # cmd_id, data
         self._dashboard_reply_handler = None
+        self._topo_handler = None
 
         # {zone: {instance_type: {id: {metric: TimeSeries() }}}}
         self._instances = {
             ma.SIMULATOR_ZONE: {k: {} for k in METRICS_LIST.keys()},
             ma.TURBONET_ZONE: {k: {} for k in METRICS_LIST.keys()}
         }
+
+        self._history_abnormal_result = {
+            ma.SIMULATOR_ZONE: {k: {} for k in METRICS_LIST.keys()},
+            ma.TURBONET_ZONE: {k: {} for k in METRICS_LIST.keys()}
+        }
+
+        self._topo = None
 
     @classmethod
     def singleton(cls):
@@ -83,7 +91,22 @@ class Core:
             logging.error('Abnormal handler not registered. Results will not be sent.')
 
         data: dict = reply.attributes
-        print(data)
+        if self._topo is None:
+            self._topo = {
+                ma.SIMULATOR_ZONE: {},  # k-v: switch_id_src: set(switch_id_dst)
+                ma.TURBONET_ZONE: {}
+            }
+
+            for zone in self._topo.keys():
+                if zone not in data[protocol.INSTANCE_TYPE_LINK]:
+                    continue
+                links = data[protocol.INSTANCE_TYPE_LINK][zone].keys()
+                for src, dst in links:
+                    if src not in self._topo[zone]:
+                        self._topo[zone][src] = set()
+                    self._topo[zone][src].add(dst)
+
+            self._topo_handler(self._topo)
 
         for instance_type in METRICS_LIST.keys():
             if instance_type not in data:
@@ -123,7 +146,11 @@ class Core:
 
                     if id not in self._instances[zone][instance_type]:
                         self._instances[zone][instance_type][id] = {
-                            metric: TimeSeries()
+                            metric: TimeSeries(normal_window_length=self._normal_window_length)
+                            for metric in METRICS_LIST[instance_type]
+                        }
+                        self._history_abnormal_result[zone][instance_type][id] = {
+                            metric: False
                             for metric in METRICS_LIST[instance_type]
                         }
 
@@ -132,12 +159,19 @@ class Core:
                         self._instances[zone][instance_type][id][metric].add(value, timestamp)
 
                         if self._detector.tail_is_anomaly(self._instances[zone][instance_type][id][metric]):
-                            if instance_type == protocol.INSTANCE_TYPE_SERVER:
-                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=id)
-                            elif instance_type == protocol.INSTANCE_TYPE_LINK:
-                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=id)
-                            elif instance_type == protocol.INSTANCE_TYPE_SWITCH:
-                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, switch_id=id)
+                            if not self._history_abnormal_result[zone][instance_type][id][metric]:
+                                if instance_type == protocol.INSTANCE_TYPE_SERVER:
+                                    self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=id)
+                                elif instance_type == protocol.INSTANCE_TYPE_LINK:
+                                    self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=id)
+                                elif instance_type == protocol.INSTANCE_TYPE_SWITCH:
+                                    self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, switch_id=id)
+                            else:   # Continuous abnormal suppression
+                                pass
+
+                            self._history_abnormal_result[zone][instance_type][id][metric] = True
+                        else:
+                            self._history_abnormal_result[zone][instance_type][id][metric] = False
 
     def process_dashboard_request(self, cmd: command.Command):
         logging.debug(f'Received dashboard request command, command_id: {cmd.cmdID}')
@@ -189,3 +223,6 @@ class Core:
 
     def register_dashboard_reply_handler(self, func: Callable):
         self._dashboard_reply_handler = func
+
+    def register_topo_handler(self, func: Callable):
+        self._topo_handler = func
