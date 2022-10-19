@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import tqdm
 
@@ -159,6 +160,13 @@ class Core:
                         self._instances[zone][instance_type][id][metric].add(value, timestamp)
 
                         if self._detector.tail_is_anomaly(self._instances[zone][instance_type][id][metric]):
+                            inst = self._instances[zone][instance_type][id][metric]
+                            values = inst.value()
+                            mu = inst._mu
+                            sigma = inst._sigma
+                            upper = mu + sigma * self._detector._k
+                            lower = mu - sigma * self._detector._k
+                            # print(f'{instance_type} {id} {metric} [' + ', '.join([f'{_:.2f}' for _ in values]) + f']\t({lower:.2f}, {upper:.2f})')
                             if not self._history_abnormal_result[zone][instance_type][id][metric]:
                                 if instance_type == protocol.INSTANCE_TYPE_SERVER:
                                     self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=id)

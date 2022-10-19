@@ -6,6 +6,13 @@
 python run.py
 ```
 
+需要在终端同步运行sam项目里面的：
+```shell
+python sam/simulator/simulator.py
+python sam/measurer/measurer.py
+```
+方可拿到输入的数据。
+
 ## 实现细节
 采样间隔为5秒，即每5秒会向数据端发送一个请求包请求获取当前所有的数据。
 

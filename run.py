@@ -7,7 +7,7 @@ logging.basicConfig(format='%(asctime)s - %(filename)s[line:%(lineno)d] %(leveln
                     datefmt='%m-%d %H:%M:%S')
 
 if __name__ == '__main__':
-    core = Core(detector=KSigma(k=5),
+    core = Core(detector=KSigma(k=10),
                 normal_window_length=10,
                 debug=False)
 
