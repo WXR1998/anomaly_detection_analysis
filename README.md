@@ -19,4 +19,8 @@ python run.py
 如果`send_result`为`False`，则不向regulator报告故障（但故障仍会以日志的形式打印在终端中）。正式联调时该项应设为`True`。
 
 ## dashboard对接
-按照陈浩给定的参数已经实现好接口。异常检测模块会读取相关的请求(`MSG_TYPE_ABNORMAL_DETECTOR_CMD`类别)并返回对应的结果。
+按照陈浩给定的参数已经实现好接口。
+
+异常检测模块会读取相关的请求(`MSG_TYPE_ABNORMAL_DETECTOR_CMD`类别)并返回对应的结果。
+
+其他参数不用特殊设置，如果报错可以将报错信息发给我。
