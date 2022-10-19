@@ -2,7 +2,6 @@ from util import Core
 from algo import KSigma
 from netio.grpc_handler import GRPCHandler
 import logging
-import datetime
 
 logging.basicConfig(format='%(asctime)s - %(filename)s[line:%(lineno)d] %(levelname)s:\t%(message)s',
                     datefmt='%m-%d %H:%M:%S')
