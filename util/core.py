@@ -1,15 +1,14 @@
 import datetime
 import logging
-
+import copy
 import numpy as np
 import tqdm
 
-from sam.base import request, command, server, switch, vnf, sfc, link, messageAgent as ma
+from sam.base import request, command, server, switch, vnf, sfc, link
 from typing import Callable, Optional
 
 from model import TimeSeries
 from netio import protocol
-
 
 class Core:
     _instance = None
@@ -32,11 +31,18 @@ class Core:
     def __init__(self,
                  k: float = 5,
                  normal_window_length: int = 60,
+                 abnormal_window_length: int = 2,
+                 cooldown: int = 30,
                  debug: bool = True):
         self._values = {}
         self._normal_window_length = normal_window_length
+        self._abnormal_window_length = abnormal_window_length
         self._debug = debug
         self._k = k
+        # 告警冷却时间
+        self._cooldown = cooldown
+        # link.utilization的异常判定阈值
+        self._link_util_thres = 0.7
 
         # zone, type, switch_id, server_id, link_id
         self._abnormal_result_handler = None
@@ -89,11 +95,11 @@ class Core:
 
         self._topo_handler(self._topo)
 
-    def _reset_ksigma(self):
+    def reset_ksigma(self):
         """
         根据收到的重置命令，重置ksigma算法的历史数据
         """
-        logging.warning('重置k-sigma算法的历史数据...')
+        logging.warning('重置k-sigma算法的历史数据')
         for zone in protocol.ZONES:
             for instance_type in protocol.INSTANCE_TYPES:
                 d = self._instances[zone][instance_type]
@@ -101,10 +107,25 @@ class Core:
                     for metric in d[idx][protocol.ATTR_METRICS].keys():
                         d[idx][protocol.ATTR_METRICS][metric].reset()
 
-        logging.warning('k-sigma算法的历史数据重置完成。')
+    def _new_timeseries(self):
+        return copy.deepcopy(
+            TimeSeries(normal_window_length=self._normal_window_length,
+                       abnormal_window_length=self._abnormal_window_length,
+                       k=self._k)
+        )
+
+    def _new_instance(self):
+        return copy.deepcopy({
+            protocol.ATTR_HISTORY_VALUE: [],
+            protocol.ATTR_METRICS: {},
+            protocol.ATTR_ABNORMAL_STATE: False,
+            protocol.ATTR_FAILURE_STATE: False,
+            protocol.ATTR_LAST_ABNORMAL: 0,
+            protocol.ATTR_LAST_FAILURE: 0
+        })
 
     def process_input_data(self, reply: request.Reply):
-        logging.info(f'收到数据，request_id: {reply.requestID}')
+        logging.info(f'收到从measurer发来的数据')
         timestamp = int(datetime.datetime.now().timestamp())
 
         if not self._abnormal_result_handler:
@@ -113,14 +134,6 @@ class Core:
         data: dict = reply.attributes
         if self._topo is None:
             self._build_topology(data)
-
-        # failure：  totally down
-        # 只需要管active字段为true的，failure不需管
-        # 但在query_type_failure需要管
-
-        # anomaly：  四种:cpu异常；内存异常；dns放大攻击；ddos攻击
-        # CPU 内存 每次新增vnfi，都会有一个通知，收到通知需要对所有timeseries进行清零重新计算
-        # link不需使用utilization，只需判定是否ddns攻击即可
 
         for instance_type in protocol.INSTANCE_TYPES:
             if instance_type not in data:
@@ -150,27 +163,30 @@ class Core:
                         obj: Optional[vnf.VNFI]         = d[protocol.ATTR_VNFI]
 
                     if idx not in self._instances[zone][instance_type]:
-                        self._instances[zone][instance_type][idx] = {
-                            protocol.ATTR_HISTORY_VALUE: [],
-                            protocol.ATTR_METRICS: {},
-                            protocol.ATTR_ABNORMAL_STATE: False,
-                            protocol.ATTR_FAILURE_STATE: False
-                        }
+                        self._instances[zone][instance_type][idx] = self._new_instance()
 
                     self._instances[zone][instance_type][idx][protocol.ATTR_HISTORY_VALUE].append((timestamp, obj))
                     self._instances[zone][instance_type][idx][protocol.ATTR_FAILURE_STATE] = not active
 
-                    if not active:  # 不是active，则证明其已经属于failure，不属于abnormal，不需处理
+                    if not active:  # 不是active，则证明其已经属于failure，不属于abnormal
+                        last_failure = self._instances[zone][instance_type][idx][protocol.ATTR_LAST_FAILURE]
+                        if datetime.datetime.now().timestamp() - last_failure >= self._cooldown:
+                            if instance_type == protocol.INSTANCE_TYPE_SERVER:
+                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=idx)
+                            if instance_type == protocol.INSTANCE_TYPE_SWITCH:
+                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, switch_id=idx)
+                            if instance_type == protocol.INSTANCE_TYPE_LINK:
+                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=idx)
+                            self._instances[zone][instance_type][idx][protocol.ATTR_LAST_FAILURE] = \
+                                datetime.datetime.now().timestamp()
                         continue
 
                     instance_dict = self._instances[zone][instance_type][idx][protocol.ATTR_METRICS]
 
                     if instance_type == protocol.INSTANCE_TYPE_SERVER:  # 服务器，需要对其CPU和内存施行异常检测
                         if protocol.ATTR_SERVER_CPU_UTILIZATION not in instance_dict:
-                            instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION] = \
-                                TimeSeries(normal_window_length=self._normal_window_length, k=self._k)
-                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION] = \
-                                TimeSeries(normal_window_length=self._normal_window_length, k=self._k)
+                            instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION] = self._new_timeseries()
+                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION] = self._new_timeseries()
 
                         cpu_util_value = float(np.nanmean(obj.getCpuUtil()))
                         instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].add(cpu_util_value)
@@ -180,35 +196,42 @@ class Core:
                         abnormal = \
                             instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].is_abnormal() or \
                             instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].is_abnormal()
-                        if abnormal:
+                        self._instances[zone][instance_type][idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
+
+                        last_abnormal = self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL]
+                        if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:
                             self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=idx)
-                            print('server ', instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].value())
-                            self._instances[zone][instance_type][idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
+                            self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL] = \
+                                datetime.datetime.now().timestamp()
 
                     elif instance_type == protocol.INSTANCE_TYPE_LINK:  # 链路，需要对其SYN包等统计信息施行异常检测
-                        if protocol.ATTR_LINK_NSH_NUM not in instance_dict:
-                            instance_dict[protocol.ATTR_LINK_NSH_NUM] = \
-                                TimeSeries(normal_window_length=self._normal_window_length, k=self._k)
-                            instance_dict[protocol.ATTR_LINK_SYN_NUM] = \
-                                TimeSeries(normal_window_length=self._normal_window_length, k=self._k)
-                            instance_dict[protocol.ATTR_LINK_DNS_NUM] = \
-                                TimeSeries(normal_window_length=self._normal_window_length, k=self._k)
+                        if protocol.ATTR_LINK_SYN_RATIO not in instance_dict:
+                            instance_dict[protocol.ATTR_LINK_SYN_RATIO] = self._new_timeseries()
+                            instance_dict[protocol.ATTR_LINK_DNS_RATIO] = self._new_timeseries()
 
                         nsh_num_value = obj.NSH_num
-                        instance_dict[protocol.ATTR_LINK_NSH_NUM].add(nsh_num_value)
                         syn_num_value = obj.SYN_num
-                        instance_dict[protocol.ATTR_LINK_SYN_NUM].add(syn_num_value)
                         dns_num_value = obj.DNS_num
-                        instance_dict[protocol.ATTR_LINK_DNS_NUM].add(dns_num_value)
+                        link_util_value = obj.utilization
+                        total_num_value = nsh_num_value + syn_num_value + dns_num_value
 
+                        syn_ratio_value = syn_num_value / total_num_value if total_num_value > 0 else 0
+                        instance_dict[protocol.ATTR_LINK_SYN_RATIO].add(syn_ratio_value)
+                        dns_ratio_value = dns_num_value / total_num_value if total_num_value > 0 else 0
+                        instance_dict[protocol.ATTR_LINK_DNS_RATIO].add(dns_ratio_value)
+
+                        # util大于阈值，且DNS包或者SYN包的比例有大的变化
                         abnormal = \
-                            instance_dict[protocol.ATTR_LINK_NSH_NUM].is_abnormal() or \
-                            instance_dict[protocol.ATTR_LINK_SYN_NUM].is_abnormal() or \
-                            instance_dict[protocol.ATTR_LINK_DNS_NUM].is_abnormal()
-                        if abnormal:
-                            self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=idx)
-                            print('link SYN ', instance_dict[protocol.ATTR_LINK_SYN_NUM].value())
+                            link_util_value > self._link_util_thres and \
+                            (instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal() or
+                             instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal())
                         self._instances[zone][instance_type][idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
+
+                        last_abnormal = self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL]
+                        if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:
+                            self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=idx)
+                            self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL] = \
+                                datetime.datetime.now().timestamp()
 
     def process_dashboard_request(self, cmd: command.Command):
         logging.info(f'收到前台查询请求，command_id: {cmd.cmdID}')

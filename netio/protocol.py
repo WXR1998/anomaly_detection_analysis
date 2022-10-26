@@ -37,12 +37,13 @@ ATTR_HISTORY_VALUE = 'history_value'
 ATTR_METRICS = 'metrics'
 ATTR_ABNORMAL_STATE = 'abnormal_state'
 ATTR_FAILURE_STATE = 'failure_state'
+ATTR_LAST_ABNORMAL = 'last_abnormal'
+ATTR_LAST_FAILURE = 'last_failure'
 
 ATTR_SERVER_CPU_UTILIZATION = 'cpu_utilization'
 ATTR_SERVER_MEMORY_UTILIZATION = 'memory_utilization'
-ATTR_LINK_NSH_NUM = 'nsh_num'
-ATTR_LINK_SYN_NUM = 'syn_num'
-ATTR_LINK_DNS_NUM = 'dns_num'
+ATTR_LINK_SYN_RATIO = 'syn_ratio'
+ATTR_LINK_DNS_RATIO = 'dns_ratio'
 
 INSTANCE_TYPES = [
     INSTANCE_TYPE_SWITCH,

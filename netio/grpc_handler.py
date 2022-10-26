@@ -49,15 +49,25 @@ def empty_anomaly_report():
 
 class GRPCHandler(ABC):
     def __init__(self,
+                 interval: float=3.0,
                  ip: str=ABNORMAL_DETECTOR_IP,
                  port: Union[str, int]=ABNORMAL_DETECTOR_PORT,
                  send_results: bool=False
                  ):
+        """
+        Args:
+            interval:       从measurer获取数据的间隔
+            ip:
+            port:
+            send_results:
+        """
+
         self._agent = ma.MessageAgent()
         self._ip = ip
         self._port = str(port)
         self._agent.startMsgReceiverRPCServer(self._ip, self._port)
         self._send_results = send_results
+        self._interval = interval
 
         # 对于每种msg，有对应的处理函数
         self._recv_handlers = {}    # {msg_type: process_function}
@@ -73,10 +83,10 @@ class GRPCHandler(ABC):
         在实际生产环境中，注册以下的自动发送和消息处理函数。
         """
 
-        self.register_send_deadloop_handler(self._send_get_dcn_info, 5)
+        self.register_send_deadloop_handler(self._send_get_dcn_info, self._interval)
         self.register_send_deadloop_handler(self._send_abnormal_results)
         self.register_recv_handler(ma.MSG_TYPE_REPLY, self._recv_input_data)
-        self.register_recv_handler(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD, self._recv_dashboard_request)
+        self.register_recv_handler(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD, self._recv_cmd)
 
     def start_listening(self):
         """
@@ -141,7 +151,7 @@ class GRPCHandler(ABC):
     def _send_get_dcn_info(self):
         req = ma.Request(0, uuid.uuid1(), request.REQUEST_TYPE_GET_DCN_INFO)
         msg = ma.SAMMessage(ma.MSG_TYPE_REQUEST, req)
-        logging.info('发送DCN请求...')
+        logging.debug('发送DCN请求...')
         self._agent.sendMsgByRPC(MEASURER_IP, MEASURER_PORT, msg)
 
     def _data_format(self, d: dict, limit: int=10) -> str:
@@ -182,20 +192,20 @@ class GRPCHandler(ABC):
                 data[zone][type_][protocol.ATTR_LINK_ID_LIST].add(linkID)
 
         # 交换机故障推断
-        for zone in self._topo.keys():
-            for src_id in self._topo[zone]:
-                count = 0
-                ano_count = 0
-                for dst_id in self._topo[zone][src_id]:
-                    if (src_id, dst_id) in data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_LINK_ID_LIST]:
-                        ano_count += 1
-                    count += 1
-
-                if ano_count > int(count * 0.8):        # 该交换机发出的超过80%的link有问题，需要将告警合并
-                    data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_SWITCH_ID_LIST].add(src_id)
-                    for dst_id in self._topo[zone][src_id]:
-                        obj = (src_id, dst_id)
-                        data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_LINK_ID_LIST].discard(obj)
+        # for zone in self._topo.keys():
+        #     for src_id in self._topo[zone]:
+        #         count = 0
+        #         ano_count = 0
+        #         for dst_id in self._topo[zone][src_id]:
+        #             if (src_id, dst_id) in data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_LINK_ID_LIST]:
+        #                 ano_count += 1
+        #             count += 1
+        #
+        #         if ano_count > int(count * 0.8):        # 该交换机发出的超过80%的link有问题，需要将告警合并
+        #             data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_SWITCH_ID_LIST].add(src_id)
+        #             for dst_id in self._topo[zone][src_id]:
+        #                 obj = (src_id, dst_id)
+        #                 data[zone][protocol.ATTR_ABNORMAL][protocol.ATTR_LINK_ID_LIST].discard(obj)
 
         data = {
             protocol.ATTR_ALL_ZONE_DETECTION_DICT: {
@@ -221,17 +231,20 @@ class GRPCHandler(ABC):
         msg = ma.SAMMessage(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD_REPLY, cmd)
         self._agent.sendMsgByRPC(DASHBOARD_IP, DASHBOARD_PORT, msg)
 
-    def _recv_dashboard_request(self, msg: ma.SAMMessage):
+    def _recv_cmd(self, msg: ma.SAMMessage):
         msg_type = msg.getMessageType()
         assert msg_type == ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD
 
         cmd: command.Command = msg.getbody()
         attr = cmd.attributes
-        if attr is None:
-            logging.warning(f'非法前端查询请求 {cmd.cmdID}')
-            return None
+        if cmd.cmdType == command.CMD_TYPE_ABNORMAL_DETECTOR_QUERY:
+            if attr is None:
+                logging.warning(f'非法前端查询请求 {cmd.cmdID}')
+                return None
+            Core.singleton().process_dashboard_request(cmd)
 
-        Core.singleton().process_dashboard_request(cmd)
+        elif cmd.cmdType == command.CMD_TYPE_ABNORMAL_DETECTOR_RESET:
+            Core.singleton().reset_ksigma()
 
     def _recv_input_data(self, msg: ma.SAMMessage):
         msg_type = msg.getMessageType()
@@ -244,6 +257,13 @@ class GRPCHandler(ABC):
             return None
 
         Core.singleton().process_input_data(reply)
+
+    def _recv_reset(self, msg: ma.SAMMessage):
+        msg_type = msg.getMessageType()
+        assert msg_type == ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD
+        logging.warning('发布新VNFI，重置ksigma参数')
+
+        Core.singleton().reset_ksigma()
 
     def _set_topo(self, topo: dict):
         self._topo = topo

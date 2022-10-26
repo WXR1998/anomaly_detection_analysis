@@ -7,11 +7,18 @@ logging.basicConfig(format='%(asctime)s - %(filename)s[line:%(lineno)d] %(leveln
                     level=logging.INFO)
 
 if __name__ == '__main__':
-    core = Core(k=5,
-                normal_window_length=5,
-                debug=False)
+    core = Core(
+        k=5,                                # k-sigma算法的k
+        normal_window_length=5,             # 以时间序列的前多少个元素确定k-sigma算法的标准值
+        abnormal_window_length=2,           # 时间序列的后若干个点均为异常，则报出整体的异常
+        cooldown=30,                        # 对于每个instance的异常，多少秒内只报告一次
+        debug=False                         # 是否打印数据处理进度条
+    )
 
-    handler = GRPCHandler(send_results=False)   # Whether to send results to the regulator
+    handler = GRPCHandler(
+        interval=3.0,                       # 每interval秒获取并处理一次数据
+        send_results=False,                 # 是否要向regulator报告abnormal和failure
+    )
     handler.regular_registration()
     handler.start_listening()
     handler.start_deadloop_sending()
