@@ -1,14 +1,14 @@
 from util import Core
-from algo import KSigma
 from netio.grpc_handler import GRPCHandler
 import logging
 
 logging.basicConfig(format='%(asctime)s - %(filename)s[line:%(lineno)d] %(levelname)s:\t%(message)s',
-                    datefmt='%m-%d %H:%M:%S')
+                    datefmt='%m-%d %H:%M:%S',
+                    level=logging.INFO)
 
 if __name__ == '__main__':
-    core = Core(detector=KSigma(k=10),
-                normal_window_length=10,
+    core = Core(k=5,
+                normal_window_length=5,
                 debug=False)
 
     handler = GRPCHandler(send_results=False)   # Whether to send results to the regulator

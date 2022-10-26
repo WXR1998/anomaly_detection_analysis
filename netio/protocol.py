@@ -1,3 +1,5 @@
+from sam.base import messageAgent as ma
+
 ATTR_ALL_ZONE_DETECTION_DICT = 'allZoneDetectionDict'
 ATTR_FAILURE = 'failure'
 ATTR_ABNORMAL = 'abnormal'
@@ -31,3 +33,25 @@ ATTR_LINK = 'link'
 ATTR_VNFI = 'vnfi'
 ATTR_SFCI = 'sfci'
 ATTR_VALUE = 'value'
+ATTR_HISTORY_VALUE = 'history_value'
+ATTR_METRICS = 'metrics'
+ATTR_ABNORMAL_STATE = 'abnormal_state'
+ATTR_FAILURE_STATE = 'failure_state'
+
+ATTR_SERVER_CPU_UTILIZATION = 'cpu_utilization'
+ATTR_SERVER_MEMORY_UTILIZATION = 'memory_utilization'
+ATTR_LINK_NSH_NUM = 'nsh_num'
+ATTR_LINK_SYN_NUM = 'syn_num'
+ATTR_LINK_DNS_NUM = 'dns_num'
+
+INSTANCE_TYPES = [
+    INSTANCE_TYPE_SWITCH,
+    INSTANCE_TYPE_SERVER,
+    INSTANCE_TYPE_VNFI,
+    INSTANCE_TYPE_SFCI,
+    INSTANCE_TYPE_LINK,
+]
+ZONES = [
+    ma.SIMULATOR_ZONE,
+    ma.TURBONET_ZONE
+]
