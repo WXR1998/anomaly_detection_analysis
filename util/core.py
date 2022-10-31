@@ -39,6 +39,7 @@ class Core:
         self._abnormal_window_length = abnormal_window_length
         self._debug = debug
         self._k = k
+        self._cpu_thres = 0.2
         # 告警冷却时间
         self._cooldown = cooldown
         # link.utilization的异常判定阈值
@@ -114,7 +115,8 @@ class Core:
                        k=self._k)
         )
 
-    def _new_instance(self):
+    @staticmethod
+    def _new_instance():
         return copy.deepcopy({
             protocol.ATTR_HISTORY_VALUE: [],
             protocol.ATTR_METRICS: {},
@@ -188,18 +190,24 @@ class Core:
                             instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION] = self._new_timeseries()
                             instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION] = self._new_timeseries()
 
+                        if protocol.ATTR_SERVER_CPU_UTILIZATION not in instance_dict or \
+                                protocol.ATTR_SERVER_MEMORY_UTILIZATION not in instance_dict:
+                            continue
+
                         cpu_util_value = float(np.nanmean(obj.getCpuUtil()))
                         instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].add(cpu_util_value)
-                        mem_util_value = obj.getDRAMUsageAmount()
+                        mem_util_value = obj.getDRAMUsagePercentage()
                         instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].add(mem_util_value)
 
                         abnormal = \
-                            instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].is_abnormal() or \
-                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].is_abnormal()
+                            cpu_util_value > self._cpu_thres and \
+                            (instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].is_abnormal() or
+                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].is_abnormal())
                         self._instances[zone][instance_type][idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
 
                         last_abnormal = self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL]
                         if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:
+                            print(f'server: {idx}\nCPU: {instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].value()}\nmemory:{instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].value()}')
                             self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=idx)
                             self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL] = \
                                 datetime.datetime.now().timestamp()
@@ -214,6 +222,10 @@ class Core:
                         dns_num_value = obj.DNS_num
                         link_util_value = obj.utilization
                         total_num_value = nsh_num_value + syn_num_value + dns_num_value
+
+                        if protocol.ATTR_LINK_SYN_RATIO not in instance_dict or \
+                                protocol.ATTR_LINK_DNS_RATIO not in instance_dict:
+                            continue
 
                         syn_ratio_value = syn_num_value / total_num_value if total_num_value > 0 else 0
                         instance_dict[protocol.ATTR_LINK_SYN_RATIO].add(syn_ratio_value)
