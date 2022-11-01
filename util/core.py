@@ -141,6 +141,7 @@ class Core:
             if instance_type not in data:
                 continue
             instance_dict = data[instance_type]
+
             for zone in instance_dict.keys():
                 zone_dict = instance_dict[zone]
 
@@ -152,17 +153,21 @@ class Core:
 
                 for idx, d in progress:
                     obj = None
-                    active = d[protocol.ATTR_ACTIVE]
-                    if instance_type == protocol.INSTANCE_TYPE_SWITCH:
-                        obj: Optional[switch.Switch]    = d[protocol.ATTR_SWITCH]
-                    elif instance_type == protocol.INSTANCE_TYPE_SERVER:
-                        obj: Optional[server.Server]    = d[protocol.ATTR_SERVER]
-                    elif instance_type == protocol.INSTANCE_TYPE_LINK:
-                        obj: Optional[link.Link]        = d[protocol.ATTR_LINK]
-                    elif instance_type == protocol.INSTANCE_TYPE_SFCI:
-                        obj: Optional[sfc.SFCI]         = d[protocol.ATTR_SFCI]
-                    elif instance_type == protocol.INSTANCE_TYPE_VNFI:
-                        obj: Optional[vnf.VNFI]         = d[protocol.ATTR_VNFI]
+                    if type(d) == sfc.SFCI:
+                        obj: Optional[sfc.SFCI]             = d
+                        active = True
+                    else:
+                        active = d[protocol.ATTR_ACTIVE]
+                        if instance_type == protocol.INSTANCE_TYPE_SWITCH:
+                            obj: Optional[switch.Switch]    = d[protocol.ATTR_SWITCH]
+                        elif instance_type == protocol.INSTANCE_TYPE_SERVER:
+                            obj: Optional[server.Server]    = d[protocol.ATTR_SERVER]
+                        elif instance_type == protocol.INSTANCE_TYPE_LINK:
+                            obj: Optional[link.Link]        = d[protocol.ATTR_LINK]
+                        elif instance_type == protocol.INSTANCE_TYPE_SFCI:
+                            obj: Optional[sfc.SFCI]         = d[protocol.ATTR_SFCI]
+                        elif instance_type == protocol.INSTANCE_TYPE_VNFI:
+                            obj: Optional[vnf.VNFI]         = d[protocol.ATTR_VNFI]
 
                     if idx not in self._instances[zone][instance_type]:
                         self._instances[zone][instance_type][idx] = self._new_instance()

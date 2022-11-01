@@ -30,11 +30,12 @@ class TimeSeries:
         assert type(value) in (float, int)
 
         n = len(self._value)
-        if len(self._value) <= self._normal_window_length:
-            mu = (self._mu * n + value) / (n + 1)
-            sigma = math.sqrt((n * (self._sigma**2 + (mu - self._mu)**2) + (mu - value)**2) / (n + 1))
-            self._mu = mu
-            self._sigma = sigma
+        # if len(self._value) <= self._normal_window_length:
+        # 不再关注normal window length，即使是异常的点也会被更新
+        mu = (self._mu * n + value) / (n + 1)
+        sigma = math.sqrt((n * (self._sigma**2 + (mu - self._mu)**2) + (mu - value)**2) / (n + 1))
+        self._mu = mu
+        self._sigma = sigma
 
         self._value.append(value)
 
