@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
     handler = GRPCHandler(
         interval=3.0,                       # 每interval秒获取并处理一次数据
-        send_results=False,                 # 是否要向regulator报告abnormal和failure
+        send_results=True,                 # 是否要向regulator报告abnormal和failure
     )
     handler.regular_registration()
     handler.start_listening()
