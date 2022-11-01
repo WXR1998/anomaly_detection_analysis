@@ -8,9 +8,9 @@ logging.basicConfig(format='%(asctime)s - %(filename)s[line:%(lineno)d] %(leveln
 
 if __name__ == '__main__':
     core = Core(
-        k=8,                                # k-sigma算法的k
-        normal_window_length=8,             # 以时间序列的前多少个元素确定k-sigma算法的标准值
-        abnormal_window_length=3,           # 时间序列的后若干个点均为异常，则报出整体的异常
+        k=4,                                # k-sigma算法的k
+        normal_window_length=5,             # 以时间序列的前多少个元素确定k-sigma算法的标准值
+        abnormal_window_length=2,           # 时间序列的后若干个点均为异常，则报出整体的异常
         cooldown=30,                        # 对于每个instance的异常，多少秒内只报告一次
         debug=False                         # 是否打印数据处理进度条
     )
