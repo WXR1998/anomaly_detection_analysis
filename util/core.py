@@ -348,8 +348,8 @@ class Core:
         # }
         reply_data = result
         t1 = time.time()
-        self._dashboard_reply_handler(cmd.cmdID, reply_data)
         logging.info(f'处理前端查询用时： {t1 - t0:.1f} s')
+        self._dashboard_reply_handler(cmd.cmdID, reply_data)
 
     def register_abnormal_result_handler(self, func: Callable):
         self._abnormal_result_handler = func
