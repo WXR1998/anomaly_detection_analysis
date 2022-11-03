@@ -7,7 +7,7 @@ import tqdm
 from sam.base import request, command, server, switch, vnf, sfc, link
 from typing import Callable, Optional
 
-from model import TimeSeries
+from model import TimeSeries, HistoryValues
 from netio import protocol
 
 class Core:
@@ -42,6 +42,8 @@ class Core:
         self._cpu_thres = 0.2
         # 告警冷却时间
         self._cooldown = cooldown
+        # 历史数据保存长度
+        self._len_limit = 30
         # link.utilization的异常判定阈值
         self._link_util_thres = 0.7
 
@@ -115,10 +117,9 @@ class Core:
                        k=self._k)
         )
 
-    @staticmethod
-    def _new_instance():
+    def _new_instance(self):
         return copy.deepcopy({
-            protocol.ATTR_HISTORY_VALUE: [],
+            protocol.ATTR_HISTORY_VALUE: HistoryValues(len_limit=self._len_limit),
             protocol.ATTR_METRICS: {},
             protocol.ATTR_ABNORMAL_STATE: False,
             protocol.ATTR_FAILURE_STATE: False,
@@ -258,18 +259,18 @@ class Core:
 
         attr: dict = cmd.attributes
         query_type = attr.get(protocol.ATTR_QUERY_TYPE)
-        metric_name = attr.get(protocol.ATTR_METRIC_NAME, default=None)
+        metric_name = attr.get(protocol.ATTR_METRIC_NAME, None)
         zone = attr.get(protocol.ATTR_ZONE)
-        time_window = attr.get(protocol.ATTR_TIME_WINDOW, default=None)
+        time_window = attr.get(protocol.ATTR_TIME_WINDOW, None)
         instance_type = attr.get(protocol.ATTR_INSTANCE_TYPE)
-        instance_id_list = attr.get(protocol.ATTR_INSTANCE_ID_LIST, default=None)
+        instance_id_list = attr.get(protocol.ATTR_INSTANCE_ID_LIST, None)
 
         result = {}
 
         data: dict = self._instances[zone][instance_type]
         if query_type == protocol.QUERY_TYPE_HISTORY:
             for idx in instance_id_list:
-                history = data[idx][protocol.ATTR_HISTORY_VALUE]
+                history = data[idx][protocol.ATTR_HISTORY_VALUE].value()
                 ts = [ts for ts, obj in history]
                 value = [obj for ts, obj in history]
                 result[idx] = {
@@ -279,7 +280,7 @@ class Core:
 
         elif query_type == protocol.QUERY_TYPE_ANOMALY:
             for idx in instance_id_list:
-                ts = data[idx][protocol.ATTR_HISTORY_VALUE][-1][0]
+                ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
                 value = data[idx][protocol.ATTR_ABNORMAL_STATE]
                 result[idx] = {
                     protocol.ATTR_TIMESTAMP: [ts],
@@ -288,7 +289,7 @@ class Core:
 
         elif query_type == protocol.QUERY_TYPE_FAILURE:
             for idx in instance_id_list:
-                ts = data[idx][protocol.ATTR_HISTORY_VALUE][-1][0]
+                ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
                 value = data[idx][protocol.ATTR_FAILURE_STATE]
                 result[idx] = {
                     protocol.ATTR_TIMESTAMP: [ts],
