@@ -1,6 +1,8 @@
 import datetime
 import logging
 import copy
+import time
+
 import numpy as np
 import tqdm
 
@@ -266,6 +268,7 @@ class Core:
         instance_id_list = attr.get(protocol.ATTR_INSTANCE_ID_LIST, None)
 
         result = {}
+        t0 = time.time()
 
         data: dict = self._instances[zone]
         for ins_type in protocol.INSTANCE_TYPES:
@@ -344,7 +347,9 @@ class Core:
         #     protocol.ATTR_VALUE: result
         # }
         reply_data = result
+        t1 = time.time()
         self._dashboard_reply_handler(cmd.cmdID, reply_data)
+        logging.info(f'处理前端查询用时： {t1 - t0:.1f} s')
 
     def register_abnormal_result_handler(self, func: Callable):
         self._abnormal_result_handler = func
