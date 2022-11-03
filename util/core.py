@@ -267,47 +267,83 @@ class Core:
 
         result = {}
 
-        data: dict = self._instances[zone][instance_type]
-        if query_type == protocol.QUERY_TYPE_HISTORY:
-            for idx in instance_id_list:
-                history = data[idx][protocol.ATTR_HISTORY_VALUE].value()
+        data: dict = self._instances[zone]
+        for ins_type in protocol.INSTANCE_TYPES:
+            if ins_type not in data:
+                continue
+            result[ins_type] = dict()
+
+            result[ins_type][protocol.QUERY_TYPE_HISTORY] = dict()
+            for idx in data[ins_type].keys():
+                history = data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()
                 ts = [ts for ts, obj in history]
                 value = [obj for ts, obj in history]
-                result[idx] = {
+                result[ins_type][protocol.QUERY_TYPE_HISTORY][idx] = {
                     protocol.ATTR_TIMESTAMP: ts,
                     protocol.ATTR_VALUE: value
                 }
 
-        elif query_type == protocol.QUERY_TYPE_ANOMALY:
-            for idx in instance_id_list:
-                ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
-                value = data[idx][protocol.ATTR_ABNORMAL_STATE]
-                result[idx] = {
+            result[ins_type][protocol.QUERY_TYPE_ANOMALY] = dict()
+            for idx in data[ins_type].keys():
+                ts = data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
+                value = data[ins_type][idx][protocol.ATTR_ABNORMAL_STATE]
+                result[ins_type][protocol.QUERY_TYPE_ANOMALY][idx] = {
                     protocol.ATTR_TIMESTAMP: [ts],
                     protocol.ATTR_VALUE: [value]
                 }
 
-        elif query_type == protocol.QUERY_TYPE_FAILURE:
-            for idx in instance_id_list:
-                ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
-                value = data[idx][protocol.ATTR_FAILURE_STATE]
-                result[idx] = {
+            result[ins_type][protocol.QUERY_TYPE_FAILURE] = dict()
+            for idx in data[ins_type].keys():
+                ts = data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
+                value = data[ins_type][idx][protocol.ATTR_FAILURE_STATE]
+                result[ins_type][protocol.QUERY_TYPE_FAILURE][idx] = {
                     protocol.ATTR_TIMESTAMP: [ts],
                     protocol.ATTR_VALUE: [value]
                 }
 
-        elif query_type == protocol.QUERY_TYPE_INSTANCE_ID:
-            result = list(self._instances[zone][instance_type].keys())
 
-        else:
-            logging.error(f'未知的查询类型： {query_type}')
-            return
+        # data: dict = self._instances[zone][instance_type]
+        # if query_type == protocol.QUERY_TYPE_HISTORY:
+        #     for idx in instance_id_list:
+        #         history = data[idx][protocol.ATTR_HISTORY_VALUE].value()
+        #         ts = [ts for ts, obj in history]
+        #         value = [obj for ts, obj in history]
+        #         result[idx] = {
+        #             protocol.ATTR_TIMESTAMP: ts,
+        #             protocol.ATTR_VALUE: value
+        #         }
+        #
+        # elif query_type == protocol.QUERY_TYPE_ANOMALY:
+        #     for idx in instance_id_list:
+        #         ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
+        #         value = data[idx][protocol.ATTR_ABNORMAL_STATE]
+        #         result[idx] = {
+        #             protocol.ATTR_TIMESTAMP: [ts],
+        #             protocol.ATTR_VALUE: [value]
+        #         }
+        #
+        # elif query_type == protocol.QUERY_TYPE_FAILURE:
+        #     for idx in instance_id_list:
+        #         ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
+        #         value = data[idx][protocol.ATTR_FAILURE_STATE]
+        #         result[idx] = {
+        #             protocol.ATTR_TIMESTAMP: [ts],
+        #             protocol.ATTR_VALUE: [value]
+        #         }
+        #
+        # elif query_type == protocol.QUERY_TYPE_INSTANCE_ID:
+        #     result = list(self._instances[zone][instance_type].keys())
+        #
+        # else:
+        #     logging.error(f'未知的查询类型： {query_type}')
+        #     return
 
-        reply_data = {
-            protocol.ATTR_QUERY_TYPE: query_type,
-            protocol.ATTR_INSTANCE_TYPE: instance_type,
-            protocol.ATTR_VALUE: result
-        }
+        # reply_data = {
+        #     protocol.attr_query_type: query_type,
+        #     protocol.attr_instance_type: instance_type,
+        #     protocol.ATTR_VALUE: result
+        # }
+        reply_data = result
         self._dashboard_reply_handler(cmd.cmdID, reply_data)
 
     def register_abnormal_result_handler(self, func: Callable):
