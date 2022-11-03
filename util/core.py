@@ -179,11 +179,11 @@ class Core:
                         last_failure = self._instances[zone][instance_type][idx][protocol.ATTR_LAST_FAILURE]
                         if datetime.datetime.now().timestamp() - last_failure >= self._cooldown:
                             if instance_type == protocol.INSTANCE_TYPE_SERVER:
-                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, server_id=idx)
+                                self._abnormal_result_handler(zone, protocol.ATTR_FAILURE, server_id=idx)
                             if instance_type == protocol.INSTANCE_TYPE_SWITCH:
-                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, switch_id=idx)
+                                self._abnormal_result_handler(zone, protocol.ATTR_FAILURE, switch_id=idx)
                             if instance_type == protocol.INSTANCE_TYPE_LINK:
-                                self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=idx)
+                                self._abnormal_result_handler(zone, protocol.ATTR_FAILURE, link_id=idx)
                             self._instances[zone][instance_type][idx][protocol.ATTR_LAST_FAILURE] = \
                                 datetime.datetime.now().timestamp()
                         continue
