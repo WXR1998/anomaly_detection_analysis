@@ -260,12 +260,12 @@ class Core:
             logging.error('尚未注册前台处理函数。')
 
         attr: dict = cmd.attributes
-        query_type = attr.get(protocol.ATTR_QUERY_TYPE)
-        metric_name = attr.get(protocol.ATTR_METRIC_NAME, None)
+        # query_type = attr.get(protocol.ATTR_QUERY_TYPE)
+        # metric_name = attr.get(protocol.ATTR_METRIC_NAME, None)
         zone = attr.get(protocol.ATTR_ZONE)
-        time_window = attr.get(protocol.ATTR_TIME_WINDOW, None)
-        instance_type = attr.get(protocol.ATTR_INSTANCE_TYPE)
-        instance_id_list = attr.get(protocol.ATTR_INSTANCE_ID_LIST, None)
+        # time_window = attr.get(protocol.ATTR_TIME_WINDOW, None)
+        # instance_type = attr.get(protocol.ATTR_INSTANCE_TYPE)
+        # instance_id_list = attr.get(protocol.ATTR_INSTANCE_ID_LIST, None)
 
         result = {}
         t0 = time.time()
@@ -276,33 +276,20 @@ class Core:
                 continue
             result[ins_type] = dict()
 
-            result[ins_type][protocol.QUERY_TYPE_HISTORY] = dict()
-            for idx in data[ins_type].keys():
-                history = data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()
-                ts = [ts for ts, obj in history]
-                value = [obj for ts, obj in history]
-                result[ins_type][protocol.QUERY_TYPE_HISTORY][idx] = {
-                    protocol.ATTR_TIMESTAMP: ts,
-                    protocol.ATTR_VALUE: value
-                }
-
-            result[ins_type][protocol.QUERY_TYPE_ANOMALY] = dict()
-            for idx in data[ins_type].keys():
-                ts = data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
-                value = data[ins_type][idx][protocol.ATTR_ABNORMAL_STATE]
-                result[ins_type][protocol.QUERY_TYPE_ANOMALY][idx] = {
-                    protocol.ATTR_TIMESTAMP: [ts],
-                    protocol.ATTR_VALUE: [value]
-                }
-
-            result[ins_type][protocol.QUERY_TYPE_FAILURE] = dict()
-            for idx in data[ins_type].keys():
-                ts = data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
-                value = data[ins_type][idx][protocol.ATTR_FAILURE_STATE]
-                result[ins_type][protocol.QUERY_TYPE_FAILURE][idx] = {
-                    protocol.ATTR_TIMESTAMP: [ts],
-                    protocol.ATTR_VALUE: [value]
-                }
+            result[ins_type] = {
+                idx: {
+                    # protocol.ATTR_HISTORY_VALUE: [
+                    #     {
+                    #         protocol.ATTR_TIMESTAMP: ts,
+                    #         protocol.ATTR_VALUE: value
+                    #     }
+                    #     for ts, value in data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()
+                    # ],
+                    protocol.ATTR_VALUE: data[ins_type][idx][protocol.ATTR_HISTORY_VALUE].value()[-1][-1],
+                    protocol.ATTR_ABNORMAL: bool(data[ins_type][idx][protocol.ATTR_ABNORMAL_STATE]),
+                    protocol.ATTR_FAILURE: bool(data[ins_type][idx][protocol.ATTR_FAILURE_STATE]),
+                } for idx in list(data[ins_type].keys())
+            }
 
 
         # data: dict = self._instances[zone][instance_type]
@@ -317,13 +304,13 @@ class Core:
         #         }
         #
         # elif query_type == protocol.QUERY_TYPE_ANOMALY:
-        #     for idx in instance_id_list:
-        #         ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
-        #         value = data[idx][protocol.ATTR_ABNORMAL_STATE]
-        #         result[idx] = {
-        #             protocol.ATTR_TIMESTAMP: [ts],
-        #             protocol.ATTR_VALUE: [value]
-        #         }
+        # for idx in list(data[protocol.ATTR_ABNORMAL]):
+        #     ts = data[idx][protocol.ATTR_HISTORY_VALUE].value()[-1][0]
+        #     value = data[idx][protocol.ATTR_ABNORMAL_STATE]
+        #     result[idx] = {
+        #         protocol.ATTR_TIMESTAMP: [ts],
+        #         protocol.ATTR_VALUE: [value]
+        #     }
         #
         # elif query_type == protocol.QUERY_TYPE_FAILURE:
         #     for idx in instance_id_list:
