@@ -9,6 +9,7 @@ import json
 
 from sam.base import messageAgent as ma, request, command, exceptionProcessor
 from sam.base.messageAgentAuxillary.msgAgentRPCConf import *
+import sam.base
 
 from netio import protocol
 from util import Core
@@ -149,7 +150,7 @@ class GRPCHandler(ABC):
         self._abnormal_results.append((zone, type, switch_id, server_id, link_id))
 
     def _send_get_dcn_info(self):
-        req = ma.Request(0, uuid.uuid1(), request.REQUEST_TYPE_GET_DCN_INFO)
+        req = request.Request(0, uuid.uuid1(), request.REQUEST_TYPE_GET_DCN_INFO)
         msg = ma.SAMMessage(ma.MSG_TYPE_REQUEST, req)
         logging.debug('发送DCN请求...')
         self._agent.sendMsgByRPC(MEASURER_IP, MEASURER_PORT, msg)
