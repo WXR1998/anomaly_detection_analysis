@@ -41,7 +41,7 @@ class Core:
         self._abnormal_window_length = abnormal_window_length
         self._debug = debug
         self._k = k
-        self._cpu_thres = 0.2
+        self._cpu_thres = 20
         # 告警冷却时间
         self._cooldown = cooldown
         # 历史数据保存长度
@@ -112,11 +112,12 @@ class Core:
                     for metric in d[idx][protocol.ATTR_METRICS].keys():
                         d[idx][protocol.ATTR_METRICS][metric].reset()
 
-    def _new_timeseries(self):
+    def _new_timeseries(self, jitter: float=0):
         return copy.deepcopy(
             TimeSeries(normal_window_length=self._normal_window_length,
                        abnormal_window_length=self._abnormal_window_length,
-                       k=self._k)
+                       k=self._k,
+                       minimum_sigma=jitter / self._k)
         )
 
     def _new_instance(self):
@@ -195,8 +196,9 @@ class Core:
 
                     if instance_type == protocol.INSTANCE_TYPE_SERVER:  # 服务器，需要对其CPU和内存施行异常检测
                         if protocol.ATTR_SERVER_CPU_UTILIZATION not in instance_dict:
-                            instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION] = self._new_timeseries()
-                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION] = self._new_timeseries()
+                            # 10%以下的误差可以容忍
+                            instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION] = self._new_timeseries(jitter=10)
+                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION] = self._new_timeseries(jitter=5)
 
                         if protocol.ATTR_SERVER_CPU_UTILIZATION not in instance_dict or \
                                 protocol.ATTR_SERVER_MEMORY_UTILIZATION not in instance_dict:
@@ -208,9 +210,31 @@ class Core:
                         instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].add(mem_util_value)
 
                         abnormal = \
-                            cpu_util_value > self._cpu_thres and \
-                            (instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].is_abnormal() or
-                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].is_abnormal())
+                            instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].is_abnormal() or \
+                            instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].is_abnormal()
+
+                        if self._debug:
+                            cpu_ts = instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION]
+                            cpu_value = cpu_ts.value(8)
+                            mem_ts = instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION]
+                            mem_value = mem_ts.value(8)
+
+                            mu, sigma = cpu_ts._stat_value.stats()
+                            low = mu - sigma * self._k
+                            high = mu + sigma * self._k
+                            print(f'Server CPU  {low:5.2f} {high:5.2f}')
+                            for item in cpu_value:
+                                print(f'{item:.2f}', end=', ')
+                            print()
+
+                            mu, sigma = mem_ts._stat_value.stats()
+                            low = mu - sigma * self._k
+                            high = mu + sigma * self._k
+                            print(f'Server MEM  {low:5.2f} {high:5.2f}')
+                            for item in mem_value:
+                                print(f'{item:.2f}', end=', ')
+                            print()
+
                         self._instances[zone][instance_type][idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
 
                         last_abnormal = self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL]
@@ -222,8 +246,8 @@ class Core:
 
                     elif instance_type == protocol.INSTANCE_TYPE_LINK:  # 链路，需要对其SYN包等统计信息施行异常检测
                         if protocol.ATTR_LINK_SYN_RATIO not in instance_dict:
-                            instance_dict[protocol.ATTR_LINK_SYN_RATIO] = self._new_timeseries()
-                            instance_dict[protocol.ATTR_LINK_DNS_RATIO] = self._new_timeseries()
+                            instance_dict[protocol.ATTR_LINK_SYN_RATIO] = self._new_timeseries(jitter=0)
+                            instance_dict[protocol.ATTR_LINK_DNS_RATIO] = self._new_timeseries(jitter=0)
 
                         nsh_num_value = obj.NSH_num
                         syn_num_value = obj.SYN_num
