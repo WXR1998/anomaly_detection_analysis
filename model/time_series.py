@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 import math
 import numpy as np
@@ -63,10 +64,13 @@ class TimeSeries:
     def add(self, value: float):
         assert type(value) in (float, int)
 
-        self._value.append(value)
-        # 最新的值暂时不参与mu和sigma的计算
-        if len(self._value) > self._abnormal_window_length:
-            self._stat_value.add(self._value[- self._abnormal_window_length - 1])
+        try:
+            self._value.append(value)
+            # 最新的值暂时不参与mu和sigma的计算
+            if len(self._value) > self._abnormal_window_length:
+                self._stat_value.add(self._value[- self._abnormal_window_length - 1])
+        except:
+            logging.warning('多线程导致Timeseries数据出错')
 
     def value(self, limit: Optional[int]=None) -> list:
         if limit and len(self._value) > limit:

@@ -2,6 +2,7 @@ import datetime
 import logging
 import copy
 import time
+import threading
 
 import numpy as np
 import tqdm
@@ -73,6 +74,8 @@ class Core:
             }
         }
         """
+        self._instance_mutex = threading.Lock()
+        self._last_reset = 0
         self._instances = {
             zone: {k: {} for k in protocol.INSTANCE_TYPES}
             for zone in protocol.ZONES
@@ -104,13 +107,23 @@ class Core:
         """
         根据收到的重置命令，重置ksigma算法的历史数据
         """
+
+        now = datetime.datetime.now().timestamp()
+        if now - self._last_reset < 10:
+            return
+        self._last_reset = now
+
         logging.warning('重置k-sigma算法的历史数据')
+        self._instance_mutex.acquire()
+        logging.warning('重置开始')
         for zone in protocol.ZONES:
             for instance_type in protocol.INSTANCE_TYPES:
                 d = self._instances[zone][instance_type]
                 for idx in d.keys():
                     for metric in d[idx][protocol.ATTR_METRICS].keys():
                         d[idx][protocol.ATTR_METRICS][metric].reset()
+        logging.warning('重置结束')
+        self._instance_mutex.release()
 
     def _new_timeseries(self, jitter: float=0):
         return copy.deepcopy(
@@ -131,16 +144,16 @@ class Core:
         })
 
     def process_input_data(self, reply: request.Reply):
-        logging.info(f'收到从measurer发来的数据')
         timestamp = int(datetime.datetime.now().timestamp())
 
         if not self._abnormal_result_handler:
             logging.error('尚未注册异常报警函数，结果将不会发送。')
 
         data: dict = reply.attributes
-        if self._topo is None:
-            self._build_topology(data)
+        if protocol.INSTANCE_TYPE_SFCI not in data:
+            data[protocol.INSTANCE_TYPE_SFCI] = data['sfcisDict']
 
+        t0 = datetime.datetime.now().timestamp()
         for instance_type in protocol.INSTANCE_TYPES:
             if instance_type not in data:
                 continue
@@ -276,6 +289,9 @@ class Core:
                             self._abnormal_result_handler(zone, protocol.ATTR_ABNORMAL, link_id=idx)
                             self._instances[zone][instance_type][idx][protocol.ATTR_LAST_ABNORMAL] = \
                                 datetime.datetime.now().timestamp()
+
+        t1 = datetime.datetime.now().timestamp()
+        logging.info(f'处理数据用时 {t1 - t0:.2f} s')
 
     def process_dashboard_request(self, cmd: command.Command):
         logging.info(f'收到前台查询请求，command_id: {cmd.cmdID}')

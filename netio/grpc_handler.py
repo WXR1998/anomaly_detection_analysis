@@ -6,6 +6,7 @@ from typing import Union, Callable
 from concurrent.futures import ThreadPoolExecutor
 import logging
 import json
+import datetime
 
 from sam.base import messageAgent as ma, request, command, exceptionProcessor
 from sam.base.messageAgentAuxillary.msgAgentRPCConf import *
@@ -78,6 +79,7 @@ class GRPCHandler(ABC):
 
         self._abnormal_results = []
         self._topo = None
+        self._last_recv_timestamp = {}
 
     def regular_registration(self):
         """
@@ -85,9 +87,11 @@ class GRPCHandler(ABC):
         """
 
         self.register_send_deadloop_handler(self._send_get_dcn_info, self._interval)
-        self.register_send_deadloop_handler(self._send_abnormal_results)
+        self.register_send_deadloop_handler(self._send_get_simulator_info, self._interval)
+        self.register_send_deadloop_handler(self._send_abnormal_results, 2)
         self.register_recv_handler(ma.MSG_TYPE_REPLY, self._recv_input_data)
         self.register_recv_handler(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD, self._recv_cmd)
+        self.register_recv_handler(ma.MSG_TYPE_SIMULATOR_CMD_REPLY, self._recv_input_data)
 
     def start_listening(self):
         """
@@ -152,8 +156,16 @@ class GRPCHandler(ABC):
     def _send_get_dcn_info(self):
         req = request.Request(0, uuid.uuid1(), request.REQUEST_TYPE_GET_DCN_INFO)
         msg = ma.SAMMessage(ma.MSG_TYPE_REQUEST, req)
-        logging.debug('发送DCN请求...')
-        self._agent.sendMsgByRPC(MEASURER_IP, MEASURER_PORT, msg)
+        logging.debug('发送Turbonet Data请求...')
+        self._agent.sendMsgByRPC(MEASURER_IP, MEASURER_PORT, msg, 0)
+
+    def _send_get_simulator_info(self):
+        getSFCIStateCmd = command.Command(command.CMD_TYPE_GET_ALL_INFO,
+                                          uuid.uuid1(),
+                                          {"zone": ma.SIMULATOR_ZONE})
+        msg = ma.SAMMessage(ma.MSG_TYPE_SIMULATOR_CMD, getSFCIStateCmd)
+        logging.debug('发送Simulator Data请求...')
+        self._agent.sendMsgByRPC(SIMULATOR_IP, SIMULATOR_PORT, msg, 0)
 
     def _data_format(self, d: dict, limit: int=10) -> str:
         """
@@ -249,13 +261,20 @@ class GRPCHandler(ABC):
 
     def _recv_input_data(self, msg: ma.SAMMessage):
         msg_type = msg.getMessageType()
-        assert msg_type == ma.MSG_TYPE_REPLY
+        assert msg_type in [ma.MSG_TYPE_REPLY, ma.MSG_TYPE_SIMULATOR_CMD_REPLY]
 
         reply: request.Reply = msg.getbody()
         attr = reply.attributes
         if attr is None:
             logging.warning(f'非法输入数据 {reply.requestID}')
             return None
+
+        delta = 0
+        if msg_type in self._last_recv_timestamp:
+            delta = datetime.datetime.now().timestamp() - self._last_recv_timestamp[msg_type]
+        self._last_recv_timestamp[msg_type] = datetime.datetime.now().timestamp()
+
+        logging.info(f'收到数据：{msg_type}, 间隔 {delta:.1f} s')
 
         Core.singleton().process_input_data(reply)
 
