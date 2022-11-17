@@ -1,3 +1,5 @@
+# 不再使用
+
 import datetime
 import logging
 import copy
@@ -74,8 +76,8 @@ class Core:
             }
         }
         """
-        self._instance_mutex = threading.Lock()
         self._last_reset = 0
+        self._input_data_mutex = threading.Lock()
         self._instances = {
             zone: {k: {} for k in protocol.INSTANCE_TYPES}
             for zone in protocol.ZONES
@@ -114,7 +116,6 @@ class Core:
         self._last_reset = now
 
         logging.warning('重置k-sigma算法的历史数据')
-        self._instance_mutex.acquire()
         logging.warning('重置开始')
         for zone in protocol.ZONES:
             for instance_type in protocol.INSTANCE_TYPES:
@@ -123,7 +124,6 @@ class Core:
                     for metric in d[idx][protocol.ATTR_METRICS].keys():
                         d[idx][protocol.ATTR_METRICS][metric].reset()
         logging.warning('重置结束')
-        self._instance_mutex.release()
 
     def _new_timeseries(self, jitter: float=0):
         return copy.deepcopy(
@@ -153,6 +153,11 @@ class Core:
         if protocol.INSTANCE_TYPE_SFCI not in data:
             data[protocol.INSTANCE_TYPE_SFCI] = data['sfcisDict']
 
+        if self._input_data_mutex.locked():
+            logging.warning(f'处理正忙，输入被丢弃')
+            return
+
+        self._input_data_mutex.acquire()
         t0 = datetime.datetime.now().timestamp()
         for instance_type in protocol.INSTANCE_TYPES:
             if instance_type not in data:
@@ -189,7 +194,8 @@ class Core:
                     if idx not in self._instances[zone][instance_type]:
                         self._instances[zone][instance_type][idx] = self._new_instance()
 
-                    self._instances[zone][instance_type][idx][protocol.ATTR_HISTORY_VALUE].append((timestamp, obj))
+                    if instance_type == protocol.INSTANCE_TYPE_SFCI:
+                        self._instances[zone][instance_type][idx][protocol.ATTR_HISTORY_VALUE].append((timestamp, obj))
                     self._instances[zone][instance_type][idx][protocol.ATTR_FAILURE_STATE] = not active
 
                     if not active:  # 不是active，则证明其已经属于failure，不属于abnormal
@@ -209,7 +215,6 @@ class Core:
 
                     if instance_type == protocol.INSTANCE_TYPE_SERVER:  # 服务器，需要对其CPU和内存施行异常检测
                         if protocol.ATTR_SERVER_CPU_UTILIZATION not in instance_dict:
-                            # 10%以下的误差可以容忍
                             instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION] = self._new_timeseries(jitter=10)
                             instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION] = self._new_timeseries(jitter=5)
 
@@ -292,6 +297,7 @@ class Core:
 
         t1 = datetime.datetime.now().timestamp()
         logging.info(f'处理数据用时 {t1 - t0:.2f} s')
+        self._input_data_mutex.release()
 
     def process_dashboard_request(self, cmd: command.Command):
         logging.info(f'收到前台查询请求，command_id: {cmd.cmdID}')

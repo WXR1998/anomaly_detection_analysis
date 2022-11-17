@@ -1,53 +1,21 @@
+# 不再使用
+
 import time
 import uuid
-import copy
 from abc import ABC
 from typing import Union, Callable
 from concurrent.futures import ThreadPoolExecutor
 import logging
-import json
 import datetime
 
-from sam.base import messageAgent as ma, request, command, exceptionProcessor
+from sam.base import messageAgent as ma, request, command
 from sam.base.messageAgentAuxillary.msgAgentRPCConf import *
-import sam.base
 
 from netio import protocol
-from util import Core
+from util.core import Core
+from util.anomaly_report import data_format, empty_anomaly_report_set
+from util.threading import thread_done_callback
 
-def thread_done_callback(worker):
-    worker_exception = worker.exception()
-    if worker_exception:
-        exceptionProcessor.ExceptionProcessor(logging.getLogger()).logException(worker_exception)
-
-def empty_anomaly_report():
-    data = {
-        ma.TURBONET_ZONE: {
-            protocol.ATTR_FAILURE: {
-                protocol.ATTR_SWITCH_ID_LIST: set(),
-                protocol.ATTR_SERVER_ID_LIST: set(),
-                protocol.ATTR_LINK_ID_LIST: set()
-            },
-            protocol.ATTR_ABNORMAL: {
-                protocol.ATTR_SWITCH_ID_LIST: set(),
-                protocol.ATTR_SERVER_ID_LIST: set(),
-                protocol.ATTR_LINK_ID_LIST: set()
-            },
-        },
-        ma.SIMULATOR_ZONE: {
-            protocol.ATTR_FAILURE: {
-                protocol.ATTR_SWITCH_ID_LIST: set(),
-                protocol.ATTR_SERVER_ID_LIST: set(),
-                protocol.ATTR_LINK_ID_LIST: set()
-            },
-            protocol.ATTR_ABNORMAL: {
-                protocol.ATTR_SWITCH_ID_LIST: set(),
-                protocol.ATTR_SERVER_ID_LIST: set(),
-                protocol.ATTR_LINK_ID_LIST: set()
-            },
-        }
-    }
-    return copy.deepcopy(data)
 
 class GRPCHandler(ABC):
     def __init__(self,
@@ -86,7 +54,7 @@ class GRPCHandler(ABC):
         在实际生产环境中，注册以下的自动发送和消息处理函数。
         """
 
-        self.register_send_deadloop_handler(self._send_get_dcn_info, self._interval)
+        # self.register_send_deadloop_handler(self._send_get_turbonet_info, self._interval)
         self.register_send_deadloop_handler(self._send_get_simulator_info, self._interval)
         self.register_send_deadloop_handler(self._send_abnormal_results, 2)
         self.register_recv_handler(ma.MSG_TYPE_REPLY, self._recv_input_data)
@@ -153,7 +121,7 @@ class GRPCHandler(ABC):
         assert type in [protocol.ATTR_ABNORMAL, protocol.ATTR_FAILURE]
         self._abnormal_results.append((zone, type, switch_id, server_id, link_id))
 
-    def _send_get_dcn_info(self):
+    def _send_get_turbonet_info(self):
         req = request.Request(0, uuid.uuid1(), request.REQUEST_TYPE_GET_DCN_INFO)
         msg = ma.SAMMessage(ma.MSG_TYPE_REQUEST, req)
         logging.debug('发送Turbonet Data请求...')
@@ -167,32 +135,12 @@ class GRPCHandler(ABC):
         logging.debug('发送Simulator Data请求...')
         self._agent.sendMsgByRPC(SIMULATOR_IP, SIMULATOR_PORT, msg, 0)
 
-    def _data_format(self, d: dict, limit: int=10) -> str:
-        """
-        将dict格式化输出，较长的list只显示前n项
-        """
-        result = None
-
-        if type(d) == dict:
-            for k, v in d.items():
-                r = f'{k}: {self._data_format(v)}'
-                if result is None:
-                    result = r
-                else:
-                    result = result + ', ' + r
-            result = '{' + result + '}'
-        elif type(d) == list:
-            l = len(d)
-            if len(d) > limit:
-                d = d[:limit]
-            result = f'{json.dumps(d)}' + ('' if l <= limit else f' (len: {l})')
-        return result
 
     def _send_abnormal_results(self):
         if len(self._abnormal_results) == 0:
             return
 
-        data = empty_anomaly_report()
+        data = empty_anomaly_report_set()
         while len(self._abnormal_results) > 0:
             zone, type_, switchID, serverID, linkID = self._abnormal_results[0]
             self._abnormal_results.pop(0)
@@ -231,7 +179,7 @@ class GRPCHandler(ABC):
             }
         }
 
-        logging.warning('故障报警结果：\t' + self._data_format(data))
+        logging.warning('故障报警结果：\t' + data_format(data))
 
         cmd = command.Command(command.CMD_TYPE_HANDLE_FAILURE_ABNORMAL, uuid.uuid1(), attributes=data)
         msg = ma.SAMMessage(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD, cmd)
