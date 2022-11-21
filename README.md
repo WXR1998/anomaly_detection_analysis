@@ -14,17 +14,18 @@ python sam/measurer/measurer.py
 
 方可拿到输入的数据。
 
-**注意**：刚开始运行时，因为需要初始化一些instance，处理速度会跟不上数据发送速度，会有几个报错。等约10秒后稳定运行，就不会再出现报错了。如果有报错，就可能是代码bug。
-
 ## 实现细节
-采样间隔为{interval}秒，即每{interval}秒会向数据端发送一个请求包请求获取当前所有的数据。
+采样间隔为`interval`秒，即每`interval`秒会向数据端发送一个请求包请求获取当前所有的数据。
 
 使用k-sigma方法检测异常。
 
-对于每一个指标，默认前`normal_window_length`次采样获取到的数据是没有故障的。并以这些次数的采样结果作为mu和sigma的计算标准，从而得到k-sigma算法中，该指标正常范围的上下限。超出该上下限即认为发生异常。
+使用多进程，将数据的输入输出和异常检测部分隔离开，异常检测部分使用多个CPU核心同步处理，并将报告的异常情况/前端查询结果发回输入输出进程（IOHandler）进行处理。
+
+对于每一个指标，设当前时间点为`T`,则默认`[T-normal_window_length-abnormal_window_length, T-abnormal_window_length)`数据点是没有故障的。
+并以这些次数的采样结果作为mu和sigma的计算标准，从而得到k-sigma算法中，该指标正常范围的上下限。超出该上下限即认为发生异常。
 
 ## 详细参数
-见`run.py`中，有`normal_window_length`, `send_result`, `abnormal_window_length`, `cooldown`, `interval`及其对应的注释。 
+见`run.py`中，Dispatcher和IOHandler的输入参数有`normal_window_length`, `send_result`, `abnormal_window_length`, `cooldown`, `interval`及其对应的注释。 
 
 如果`send_result`为`False`，则不向regulator报告故障（但故障仍会以日志的形式打印在终端中）。正式联调时该项应设为`True`。
 

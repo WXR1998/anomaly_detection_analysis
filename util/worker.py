@@ -125,7 +125,7 @@ class Worker(ABC):
 
     def _process_dashboard_request(self, attr: dict):
         """
-        只需处理SFCI类型的查询
+        处理前端查询
         """
 
         result = {}
@@ -135,9 +135,10 @@ class Worker(ABC):
             zone, instance_type, idx = instance_idx
             if zone != target_zone:
                 continue
-            if instance_type != protocol.INSTANCE_TYPE_SFCI:
-                continue
+
             result[idx] = {
+                protocol.ATTR_INSTANCE_TYPE: instance_type,
+                protocol.ATTR_ZONE: target_zone,
                 protocol.ATTR_VALUE: v[protocol.ATTR_HISTORY_VALUE].value()[-1][-1],
                 protocol.ATTR_ABNORMAL: bool(v[protocol.ATTR_ABNORMAL_STATE]),
                 protocol.ATTR_FAILURE: bool(v[protocol.ATTR_FAILURE_STATE]),

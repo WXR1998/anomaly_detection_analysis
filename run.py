@@ -23,7 +23,7 @@ if __name__ == '__main__':
         num_workers=num_workers
     )
     io_handler = IOHandler(
-        interval=3,
+        interval=3.0,
         num_workers=num_workers,
         data_queue=data_queue,
         anom_queue=anom_queue,

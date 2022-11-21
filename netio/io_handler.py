@@ -171,19 +171,36 @@ class IOHandler(ABC):
         """
 
         while True:
-            cmd_id, cmd_attr = self._res_queue.get()
-            if cmd_id not in self._dashboard_command_results:
-                self._dashboard_command_results[cmd_id] = []
-            self._dashboard_command_results[cmd_id].append(cmd_attr)
+            try:
+                cmd_id, cmd_attr = self._res_queue.get()
+                if cmd_id not in self._dashboard_command_results:
+                    self._dashboard_command_results[cmd_id] = []
+                self._dashboard_command_results[cmd_id].append(cmd_attr)
 
-            if len(self._dashboard_command_results[cmd_id]) == self._num_workers:   # 所有worker都已返回查询结果
-                results = self._dashboard_command_results[cmd_id]
-                result = {}
-                for item in results:
-                    result.update(item)
-                result = {protocol.INSTANCE_TYPE_SFCI: result}
-                self._send_dashboard_reply(cmd_id, result)
-                self._dashboard_command_results.pop(cmd_id)
+                if len(self._dashboard_command_results[cmd_id]) == self._num_workers:   # 所有worker都已返回查询结果
+                    results = self._dashboard_command_results[cmd_id]
+                    r = {}
+                    for item in results:
+                        r.update(item)
+
+                    formatted_results = {
+                        zone: {
+                            instance_type: {}
+                            for instance_type in protocol.INSTANCE_TYPES
+                        } for zone in protocol.ZONES
+                    }
+                    for idx, v in r.items():
+                        zone = v[protocol.ATTR_ZONE]
+                        instance_type = v[protocol.ATTR_INSTANCE_TYPE]
+                        v.pop(protocol.ATTR_ZONE)
+                        v.pop(protocol.ATTR_INSTANCE_TYPE)
+                        formatted_results[zone][instance_type][idx] = v
+
+                    self._send_dashboard_reply(cmd_id, formatted_results)
+                    self._dashboard_command_results.pop(cmd_id)
+
+            except Exception as e:
+                logging.warning(f'前端请求结果发生错误 {e}')
 
     def _monitor_recv_data(self):
         """
