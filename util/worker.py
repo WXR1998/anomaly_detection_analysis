@@ -149,7 +149,6 @@ class Worker(ABC):
     def _monitor_cmd_queue(self):
         while True:
             cmd: command.Command = self._cmd_queue.get()
-            logging.warning('worker收到reset')
             attr = cmd.attributes
             if cmd.cmdType == command.CMD_TYPE_ABNORMAL_DETECTOR_QUERY:
                 result = self._process_dashboard_request(attr)
