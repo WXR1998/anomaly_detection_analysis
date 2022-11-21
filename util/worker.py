@@ -139,7 +139,7 @@ class Worker(ABC):
             result[idx] = {
                 protocol.ATTR_INSTANCE_TYPE: instance_type,
                 protocol.ATTR_ZONE: target_zone,
-                protocol.ATTR_VALUE: v[protocol.ATTR_HISTORY_VALUE].value()[-1][-1],
+                protocol.ATTR_VALUE: v[protocol.ATTR_HISTORY_VALUE].value()[-1],
                 protocol.ATTR_ABNORMAL: bool(v[protocol.ATTR_ABNORMAL_STATE]),
                 protocol.ATTR_FAILURE: bool(v[protocol.ATTR_FAILURE_STATE]),
             }
