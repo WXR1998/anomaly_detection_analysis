@@ -9,7 +9,7 @@ import logging
 
 from sam.base import messageAgent as ma, command
 
-from model import HistoryValues, TimeSeries
+from model import TimeSeries
 from netio import protocol
 from util import threading
 
@@ -61,7 +61,7 @@ class Worker(ABC):
 
     def _new_instance(self):
         return copy.deepcopy({
-            protocol.ATTR_HISTORY_VALUE: HistoryValues(len_limit=self._history_len_limit),
+            protocol.ATTR_HISTORY_VALUE: None,
             protocol.ATTR_METRICS: {},
             protocol.ATTR_ABNORMAL_STATE: False,
             protocol.ATTR_FAILURE_STATE: False,
@@ -139,7 +139,7 @@ class Worker(ABC):
             result[idx] = {
                 protocol.ATTR_INSTANCE_TYPE: instance_type,
                 protocol.ATTR_ZONE: target_zone,
-                protocol.ATTR_VALUE: v[protocol.ATTR_HISTORY_VALUE].value()[-1],
+                protocol.ATTR_VALUE: v[protocol.ATTR_HISTORY_VALUE],
                 protocol.ATTR_ABNORMAL: bool(v[protocol.ATTR_ABNORMAL_STATE]),
                 protocol.ATTR_FAILURE: bool(v[protocol.ATTR_FAILURE_STATE]),
             }
@@ -161,7 +161,7 @@ class Worker(ABC):
             element_list = self._data_queue.get()
             for element in element_list:
                 self._count += 1
-                timestamp = element[protocol.ATTR_TIMESTAMP]
+                # timestamp = element[protocol.ATTR_TIMESTAMP]
                 instance_type = element[protocol.ATTR_INSTANCE_TYPE]
                 zone = element[protocol.ATTR_ZONE]
                 active = element[protocol.ATTR_ACTIVE]
@@ -172,9 +172,7 @@ class Worker(ABC):
                 if instance_idx not in self._instances:
                     self._instances[instance_idx] = self._new_instance()
 
-                if instance_type == protocol.INSTANCE_TYPE_SFCI:
-                    self._instances[instance_idx][protocol.ATTR_HISTORY_VALUE].append((timestamp, obj))
-
+                self._instances[instance_idx][protocol.ATTR_HISTORY_VALUE] = obj
                 self._instances[instance_idx][protocol.ATTR_FAILURE_STATE] = not active
 
                 if not active:  # 不是active，则证明其已经属于failure，不属于abnormal
