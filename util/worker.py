@@ -7,6 +7,7 @@ import datetime
 import numpy as np
 import logging
 
+import sam.base.link
 from sam.base import messageAgent as ma, command
 
 from model import TimeSeries
@@ -20,8 +21,8 @@ class Worker(ABC):
             k: float,
             data_queue: Queue,  # 主进程发来的原始数据
             anom_queue: Queue,  # 应该报告异常的元素结果
-            cmd_queue:  Queue,  # 主进程发来的命令
-            res_queue:  Queue,  # 应该发给主进程的前端查询结果
+            cmd_queue: Queue,  # 主进程发来的命令
+            res_queue: Queue,  # 应该发给主进程的前端查询结果
             history_len_limit: int,
             cooldown: int,
             normal_window_length: int,
@@ -55,7 +56,8 @@ class Worker(ABC):
         self._last_reset = datetime.datetime.now().timestamp()
 
         self._instances = {}
-        self._link_util_thres = 0.7
+        self._link_util_thres = 0.5
+        self._link_packet_num_thres = 10000
 
         self._count = 0
 
@@ -73,9 +75,9 @@ class Worker(ABC):
             self,
             zone: str,
             anom_type: str,
-            switch_id: str=None,
-            server_id: str=None,
-            link_id: tuple=None
+            switch_id: str = None,
+            server_id: str = None,
+            link_id: tuple = None
     ):
         """
         给某个组件添加一个anomaly，不能三个全为None
@@ -85,7 +87,7 @@ class Worker(ABC):
         assert anom_type in [protocol.ATTR_ABNORMAL, protocol.ATTR_FAILURE]
         self._anom_queue.put((zone, anom_type, switch_id, server_id, link_id))
 
-    def _new_timeseries(self, jitter: float=0):
+    def _new_timeseries(self, jitter: float = 0):
         return copy.deepcopy(
             TimeSeries(
                 normal_window_length=self._normal_window_length,
@@ -119,7 +121,7 @@ class Worker(ABC):
     def _print_count(self):
         while True:
             if self._debug:
-                logging.info(f'Worker {self._name} 已处理元素: {self._count}')
+                logging.debug(f'Worker {self._name} 已处理元素: {self._count}')
 
             time.sleep(15)
 
@@ -204,7 +206,7 @@ class Worker(ABC):
                             instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].is_abnormal() or \
                             instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].is_abnormal()
 
-                        if self._debug:
+                        if self._debug and instance_idx[2] in (10001, 10002):
                             cpu_ts = instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION]
                             cpu_value = cpu_ts.value(8)
                             mem_ts = instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION]
@@ -213,29 +215,29 @@ class Worker(ABC):
                             mu, sigma = cpu_ts._stat_value.stats()
                             low = mu - sigma * self._k
                             high = mu + sigma * self._k
-                            logging.debug(f'Server CPU  {low:5.2f} {high:5.2f}')
+                            logging.info(f'{instance_idx[2]} CPU  {low:5.2f} {high:5.2f}')
                             print_s = ''
                             for item in cpu_value:
                                 print_s += f'{item:.2f}, '
-                            logging.debug(print_s)
+                            logging.info(print_s)
 
                             mu, sigma = mem_ts._stat_value.stats()
                             low = mu - sigma * self._k
                             high = mu + sigma * self._k
-                            logging.debug(f'Server MEM  {low:5.2f} {high:5.2f}')
+                            logging.info(f'{instance_idx[2]} MEM  {low:5.2f} {high:5.2f}')
                             print_s = ''
                             for item in mem_value:
                                 print_s += f'{item:.2f}, '
-                            logging.debug(print_s)
+                            logging.info(print_s)
 
                         self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
 
                         last_abnormal = self._instances[instance_idx][protocol.ATTR_LAST_ABNORMAL]
                         if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:
                             if self._debug:
-                                logging.debug(f'server: {idx}\n'
-                                              f'CPU: {instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].value()}\n'
-                                              f'memory:{instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].value()}')
+                                logging.info(f'server: {idx}\n'
+                                             f'CPU: {instance_dict[protocol.ATTR_SERVER_CPU_UTILIZATION].value()}\n'
+                                             f'memory:{instance_dict[protocol.ATTR_SERVER_MEMORY_UTILIZATION].value()}')
                             self._add_anomaly_report(zone, protocol.ATTR_ABNORMAL, server_id=idx)
                             self._instances[instance_idx][protocol.ATTR_LAST_ABNORMAL] = \
                                 datetime.datetime.now().timestamp()
@@ -249,6 +251,9 @@ class Worker(ABC):
                         syn_num_value = obj.SYN_num
                         dns_num_value = obj.DNS_num
                         link_util_value = obj.utilization
+                        time_window = max(obj.this_timestamp - obj.last_timestamp, 1)
+                        syn_bandwidth = syn_num_value / time_window * 54  # GBps
+                        dns_bandwidth = dns_num_value / time_window * 54  # GBps
                         total_num_value = nsh_num_value + syn_num_value + dns_num_value
 
                         syn_ratio_value = syn_num_value / total_num_value if total_num_value > 0 else 0
@@ -256,12 +261,29 @@ class Worker(ABC):
                         dns_ratio_value = dns_num_value / total_num_value if total_num_value > 0 else 0
                         instance_dict[protocol.ATTR_LINK_DNS_RATIO].add(dns_ratio_value)
 
+                        if self._debug:
+                            ele = [(0, 6), (6, 14), (14, 10001), (12, 4), (4, 0)]
+                            if instance_idx[2] in ele:
+                                print(
+                                    f'{instance_idx}\n{link_util_value:.3f}, {total_num_value}, {syn_ratio_value:.3f}, {dns_ratio_value:.3f}, {syn_bandwidth:.2f} GBps')
+
                         # util大于阈值，且DNS包或者SYN包的比例有大的变化
                         abnormal = \
-                            link_util_value > self._link_util_thres and \
-                            (instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal() or
-                             instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal())
+                            link_util_value > self._link_util_thres and (
+                                    instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal() or
+                                    instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal() or
+                                    syn_ratio_value > 0.95 or
+                                    dns_ratio_value > 0.95
+                            ) and (
+                                syn_num_value > self._link_packet_num_thres or
+                                dns_num_value > self._link_packet_num_thres
+                            )
                         self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
+                        if abnormal:
+                            print(f'ABNORMAL: {instance_idx[-1]} {link_util_value:.3f} '
+                                  f'{instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal()} '
+                                  f'{instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal()} '
+                                  f'{syn_ratio_value:.2f} {dns_ratio_value:.2f}')
 
                         last_abnormal = self._instances[instance_idx][protocol.ATTR_LAST_ABNORMAL]
                         if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:

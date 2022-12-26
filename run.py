@@ -15,12 +15,13 @@ if __name__ == '__main__':
     res_queue   = Manager().Queue()
     num_workers = 18
     dispatcher = Dispatcher(
-        k=3,
+        k=5,
         data_queue=data_queue,
         anom_queue=anom_queue,
         cmd_queue=cmd_queue,
         res_queue=res_queue,
-        num_workers=num_workers
+        num_workers=num_workers,
+        debug=False
     )
     io_handler = IOHandler(
         interval=3.0,
@@ -29,7 +30,7 @@ if __name__ == '__main__':
         anom_queue=anom_queue,
         cmd_queue=cmd_queue,
         res_queue=res_queue,
-        send_reports=False,
+        send_reports=True,
     )
 
     pool = ProcessPoolExecutor(max_workers=1)

@@ -1,5 +1,8 @@
 # 异常检测模块
 
+## 联调运行方法
+在wxr账号下，先`conda activate py39`，然后`python run.py`即可运行异常检测程序。
+
 ## 基础运行方法
 
 ```shell

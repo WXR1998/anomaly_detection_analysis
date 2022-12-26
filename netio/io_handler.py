@@ -90,7 +90,6 @@ class IOHandler(ABC):
         """
         发送一次取数请求
         """
-
         self._send_turbonet()
         self._send_simulator()
 
@@ -136,6 +135,17 @@ class IOHandler(ABC):
         except Exception as e:
             logging.warning(f'发送前端结果非法 {e}')
 
+    def _send_initialization(self):
+        logging.warning('发送初始化命令')
+
+        cmd = command.Command(
+            cmdType=command.CMD_TYPE_FAILURE_ABNORMAL_CLEAR,
+            cmdID=uuid.uuid1(),
+            attributes={}
+        )
+        msg = ma.SAMMessage(ma.MSG_TYPE_ABNORMAL_DETECTOR_CMD, cmd)
+        self._agent.sendMsgByRPC(REGULATOR_IP, REGULATOR_PORT, msg, maxRetryNum=0)
+
     def _monitor_anomaly_report(self):
         """
         处理告警队列
@@ -161,7 +171,7 @@ class IOHandler(ABC):
                 report = anomaly_report.get_anomaly_report_list(report)
                 self._send_anomaly_report(report)
 
-            time.sleep(1)
+            time.sleep(3)
 
     def _monitor_dashboard_reply(self):
         """
@@ -248,6 +258,8 @@ class IOHandler(ABC):
         if self._agent is None:
             self._agent = ma.MessageAgent()
             self._agent.startMsgReceiverRPCServer(ABNORMAL_DETECTOR_IP, ABNORMAL_DETECTOR_PORT)
+
+        self._send_initialization()
 
         with ThreadPoolExecutor(max_workers=4) as pool:
             pool.submit(self._monitor_recv_data).add_done_callback(threading.thread_done_callback)
