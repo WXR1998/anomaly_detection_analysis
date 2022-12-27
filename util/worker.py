@@ -65,7 +65,7 @@ class Worker(ABC):
         return copy.deepcopy({
             protocol.ATTR_HISTORY_VALUE: None,
             protocol.ATTR_METRICS: {},
-            protocol.ATTR_ABNORMAL_STATE: False,
+            protocol.ATTR_ABNORMAL_STATE: time.time(),      # 最后一次abnormal的时间，注意即使处在报警冷却过程中，该值仍然需要更新
             protocol.ATTR_FAILURE_STATE: False,
             protocol.ATTR_LAST_ABNORMAL: 0,
             protocol.ATTR_LAST_FAILURE: 0
@@ -112,7 +112,7 @@ class Worker(ABC):
                 ts.reset()
 
     def run(self):
-        logging.info(f'Worker {self._name} 开始运行...')
+        logging.debug(f'Worker {self._name} 开始运行...')
         with ThreadPoolExecutor(max_workers=3) as pool:
             pool.submit(self._monitor_cmd_queue).add_done_callback(threading.thread_done_callback)
             pool.submit(self._monitor_data_queue).add_done_callback(threading.thread_done_callback)
@@ -141,9 +141,8 @@ class Worker(ABC):
             result[idx] = {
                 protocol.ATTR_INSTANCE_TYPE: instance_type,
                 protocol.ATTR_ZONE: target_zone,
-                # protocol.ATTR_VALUE: v[protocol.ATTR_HISTORY_VALUE],
                 protocol.ATTR_VALUE: None,
-                protocol.ATTR_ABNORMAL: bool(v[protocol.ATTR_ABNORMAL_STATE]),
+                protocol.ATTR_ABNORMAL: bool(time.time() - v[protocol.ATTR_ABNORMAL_STATE] < self._cooldown),
                 protocol.ATTR_FAILURE: bool(v[protocol.ATTR_FAILURE_STATE]),
             }
 
@@ -164,7 +163,6 @@ class Worker(ABC):
             element_list = self._data_queue.get()
             for element in element_list:
                 self._count += 1
-                # timestamp = element[protocol.ATTR_TIMESTAMP]
                 instance_type = element[protocol.ATTR_INSTANCE_TYPE]
                 zone = element[protocol.ATTR_ZONE]
                 active = element[protocol.ATTR_ACTIVE]
@@ -230,7 +228,8 @@ class Worker(ABC):
                                 print_s += f'{item:.2f}, '
                             logging.info(print_s)
 
-                        self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
+                        if abnormal:
+                            self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = time.time()
 
                         last_abnormal = self._instances[instance_idx][protocol.ATTR_LAST_ABNORMAL]
                         if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:
@@ -251,21 +250,12 @@ class Worker(ABC):
                         syn_num_value = obj.SYN_num
                         dns_num_value = obj.DNS_num
                         link_util_value = obj.utilization
-                        time_window = max(obj.this_timestamp - obj.last_timestamp, 1)
-                        syn_bandwidth = syn_num_value / time_window * 54  # GBps
-                        dns_bandwidth = dns_num_value / time_window * 54  # GBps
                         total_num_value = nsh_num_value + syn_num_value + dns_num_value
 
                         syn_ratio_value = syn_num_value / total_num_value if total_num_value > 0 else 0
                         instance_dict[protocol.ATTR_LINK_SYN_RATIO].add(syn_ratio_value)
                         dns_ratio_value = dns_num_value / total_num_value if total_num_value > 0 else 0
                         instance_dict[protocol.ATTR_LINK_DNS_RATIO].add(dns_ratio_value)
-
-                        if self._debug:
-                            ele = [(0, 6), (6, 14), (14, 10001), (12, 4), (4, 0)]
-                            if instance_idx[2] in ele:
-                                print(
-                                    f'{instance_idx}\n{link_util_value:.3f}, {total_num_value}, {syn_ratio_value:.3f}, {dns_ratio_value:.3f}, {syn_bandwidth:.2f} GBps')
 
                         # util大于阈值，且DNS包或者SYN包的比例有大的变化
                         abnormal = \
@@ -278,12 +268,14 @@ class Worker(ABC):
                                 syn_num_value > self._link_packet_num_thres or
                                 dns_num_value > self._link_packet_num_thres
                             )
-                        self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = abnormal
+
                         if abnormal:
-                            print(f'ABNORMAL: {instance_idx[-1]} {link_util_value:.3f} '
-                                  f'{instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal()} '
-                                  f'{instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal()} '
-                                  f'{syn_ratio_value:.2f} {dns_ratio_value:.2f}')
+                            self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = time.time()
+
+                            logging.info(f'LINK ABNORMAL: {instance_idx[-1]} {link_util_value:.3f} '
+                                         f'{instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal()} '
+                                         f'{instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal()} '
+                                         f'{syn_ratio_value:.2f} {dns_ratio_value:.2f}')
 
                         last_abnormal = self._instances[instance_idx][protocol.ATTR_LAST_ABNORMAL]
                         if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:

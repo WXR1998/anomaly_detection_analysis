@@ -146,7 +146,7 @@ class Dispatcher(ABC):
             avg_size = np.mean(sizes)
 
             if avg_size > 0:
-                logging.info(f'Dispatcher 数据队列平均长度： {avg_size:.1f}')
+                logging.info(f'Dispatcher 数据队列平均长度： {avg_size:.2f}')
             if self._data_queue.qsize() > 0:
                 logging.info(f'输入数据队列长度: {self._data_queue.qsize()}')
 
@@ -156,7 +156,7 @@ class Dispatcher(ABC):
                          f'分发: {avg_dispatch_time:.2f}\t'
                          f'已处理: {self._instance_count}')
 
-            time.sleep(15)
+            time.sleep(20)
 
     def run(self):
         logging.info('Dispatcher 开始运行...')
