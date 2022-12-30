@@ -90,8 +90,11 @@ class IOHandler(ABC):
         """
         发送一次取数请求
         """
-        self._send_turbonet()
-        self._send_simulator()
+        try:
+            self._send_turbonet()
+            self._send_simulator()
+        except Exception as e:
+            logging.error(f'发送取数请求错误 {e}')
 
     def _send_reset(self):
         """
@@ -199,11 +202,8 @@ class IOHandler(ABC):
                             for instance_type in protocol.INSTANCE_TYPES
                         } for zone in protocol.ZONES
                     }
-                    for idx, v in r.items():
-                        zone = v[protocol.ATTR_ZONE]
-                        instance_type = v[protocol.ATTR_INSTANCE_TYPE]
-                        v.pop(protocol.ATTR_ZONE)
-                        v.pop(protocol.ATTR_INSTANCE_TYPE)
+                    for instance_idx, v in r.items():
+                        zone, instance_type, idx = instance_idx
                         formatted_results[zone][instance_type][idx] = v
 
                     self._send_dashboard_reply(cmd_id, formatted_results)
@@ -245,6 +245,7 @@ class IOHandler(ABC):
                     if cmd.cmdType == command.CMD_TYPE_ABNORMAL_DETECTOR_QUERY:
                         if attr is not None:
                             logging.info(f'收到前端查询')
+                            logging.info(f'{cmd.attributes}')
                             self._cmd_queue.put(cmd)
                     elif cmd.cmdType == command.CMD_TYPE_ABNORMAL_DETECTOR_RESET:
                         logging.warning(f'重置算法历史数据')
@@ -257,7 +258,11 @@ class IOHandler(ABC):
         logging.info('IOHandler 开始运行...')
         if self._agent is None:
             self._agent = ma.MessageAgent()
-            self._agent.startMsgReceiverRPCServer(ABNORMAL_DETECTOR_IP, ABNORMAL_DETECTOR_PORT)
+            self._agent.startMsgReceiverRPCServer(
+                ABNORMAL_DETECTOR_IP,
+                ABNORMAL_DETECTOR_PORT,
+                msgBufferSize=100000
+            )
 
         self._send_initialization()
 

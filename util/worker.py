@@ -61,11 +61,12 @@ class Worker(ABC):
 
         self._count = 0
 
-    def _new_instance(self):
+    @staticmethod
+    def _new_instance():
         return copy.deepcopy({
             protocol.ATTR_HISTORY_VALUE: None,
             protocol.ATTR_METRICS: {},
-            protocol.ATTR_ABNORMAL_STATE: time.time(),      # 最后一次abnormal的时间，注意即使处在报警冷却过程中，该值仍然需要更新
+            protocol.ATTR_ABNORMAL_STATE: 0,  # 最后一次abnormal的时间，注意即使处在报警冷却过程中，该值仍然需要更新
             protocol.ATTR_FAILURE_STATE: False,
             protocol.ATTR_LAST_ABNORMAL: 0,
             protocol.ATTR_LAST_FAILURE: 0
@@ -131,18 +132,17 @@ class Worker(ABC):
         """
 
         result = {}
-        target_zone = attr.get(protocol.ATTR_ZONE)
 
         for instance_idx, v in self._instances.items():
             zone, instance_type, idx = instance_idx
-            if zone != target_zone:
-                continue
 
-            result[idx] = {
-                protocol.ATTR_INSTANCE_TYPE: instance_type,
-                protocol.ATTR_ZONE: target_zone,
+            result[instance_idx] = {
                 protocol.ATTR_VALUE: None,
-                protocol.ATTR_ABNORMAL: bool(time.time() - v[protocol.ATTR_ABNORMAL_STATE] < self._cooldown),
+                protocol.ATTR_ABNORMAL:
+                # bool(
+                #     (int(datetime.datetime.now().timestamp()) - v[protocol.ATTR_ABNORMAL_STATE]) < self._cooldown
+                # ),
+                bool(v[protocol.ATTR_ABNORMAL_STATE] > 0),  # 一旦异常，就维持这个状态
                 protocol.ATTR_FAILURE: bool(v[protocol.ATTR_FAILURE_STATE]),
             }
 
@@ -229,7 +229,8 @@ class Worker(ABC):
                             logging.info(print_s)
 
                         if abnormal:
-                            self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = time.time()
+                            self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = \
+                                int(datetime.datetime.now().timestamp())
 
                         last_abnormal = self._instances[instance_idx][protocol.ATTR_LAST_ABNORMAL]
                         if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:
@@ -265,17 +266,18 @@ class Worker(ABC):
                                     syn_ratio_value > 0.95 or
                                     dns_ratio_value > 0.95
                             ) and (
-                                syn_num_value > self._link_packet_num_thres or
-                                dns_num_value > self._link_packet_num_thres
+                                    syn_num_value > self._link_packet_num_thres or
+                                    dns_num_value > self._link_packet_num_thres
                             )
 
                         if abnormal:
-                            self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = time.time()
+                            self._instances[instance_idx][protocol.ATTR_ABNORMAL_STATE] = \
+                                int(datetime.datetime.now().timestamp())
 
-                            logging.info(f'LINK ABNORMAL: {instance_idx[-1]} {link_util_value:.3f} '
-                                         f'{instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal()} '
-                                         f'{instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal()} '
-                                         f'{syn_ratio_value:.2f} {dns_ratio_value:.2f}')
+                            logging.debug(f'LINK ABNORMAL: {instance_idx[-1]} {link_util_value:.3f} '
+                                          f'{instance_dict[protocol.ATTR_LINK_SYN_RATIO].is_abnormal()} '
+                                          f'{instance_dict[protocol.ATTR_LINK_DNS_RATIO].is_abnormal()} '
+                                          f'{syn_ratio_value:.2f} {dns_ratio_value:.2f}')
 
                         last_abnormal = self._instances[instance_idx][protocol.ATTR_LAST_ABNORMAL]
                         if abnormal and datetime.datetime.now().timestamp() - last_abnormal >= self._cooldown:
